@@ -1,0 +1,1299 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+</head>
+
+<body>
+  <div data-v-7f1aca05="" data-v-49807d37="" class="container">
+    <div data-v-7f1aca05="" id="html-output">
+      <h1>钉钉蓝牙打卡</h1>
+      <blockquote>
+        <p>世代继承的意志，时代的变迁，人的梦想，这些都是无法阻止的。只要人们继续追求自由的答案，这一切都将永不停止！<br><span style="float:right">——哥尔·D·罗杰</span></p>
+      </blockquote>
+      <p>参考：</p>
+      <ul>
+        <li><a
+            href="https://blog.csdn.net/weixin_45825274/article/details/131232591">esp32-C3开发板制作钉钉蓝牙打卡神器</a>：只进行了广播数据的模拟，没有模拟mac地址，使用后钉钉将会提示发现设备但无法打卡。目前已不适用于钉钉蓝牙打卡
+        </li>
+        <li><a href="https://www.cnblogs.com/dingshaohua/p/17148091.html">朋友们
+            你们真的不被约束做打工人吗？</a>：通过手机模拟广播和动态广播的获取，如果公司的考勤机是静态的建议参考这篇文章</li>
+      </ul>
+      <h2>介绍</h2>
+      <blockquote>
+        <p>
+            钉钉蓝牙打卡是通过验证打卡设备的<strong>mac地址</strong>和<strong>广播数据</strong>实现的，所以为了实现远程打卡，我们需要使用一个设备修改mac地址模拟考勤机发送广播。<br>  按照广播数据的类型来分类的话，钉钉蓝牙打卡设备分为两类，分别为<strong>静态蓝牙广播设备</strong>与<strong>动态蓝牙广播设备</strong>，无论是哪种打卡设备，都需要<strong>mac地址</strong>与考勤蓝牙设备相同<br>  实现远程蓝牙打卡的具体思路为通过使用自己的蓝牙设备模拟考勤机发送广播从而实现远程打卡，如果考勤机的广播数据是动态生成的我们还需要额外一个设备放在考勤机旁用于获取动态的广播数据并将数据上传至服务器，然后我们获取广播数据并应用于我们自己的模拟打卡设备，于是我们可以实现远程打卡
+        </p>
+      </blockquote>
+      <h2>准备</h2>
+      <ol>
+        <li>两块esp32C3开发板和两根typeC数据线</li>
+        <li>科学上网；部分软件的下载需要科学上网，如果这对你来说有些困难请向我寻求帮助（微信： <a
+            href="weixin://addfriend/wxid_6ya9agafv47222">wxid_6ya9agafv47222</a>；QQ：<em>2680613764</em>）</li>
+        <li>软件下载：<a href="https://www.arduino.cc/en/software"> Arduino </a>、<a
+            href="https://apps.microsoft.com/detail/9pp8sfm082wd?ocid=badge&amp;rtc=1&amp;hl=zh-cn&amp;gl=CN"> mqtt客户端
+          </a>、<a href="https://www.pgyer.com/DYgS"> nRF connect </a></li>
+      </ol>
+      <p>下载的软件功能如下：</p>
+      <ul>
+        <li>Arduino：用于使开发板执行我们编写的程序</li>
+        <li>mqtt客户端：用于获取远程扫描得到的动态广播数据</li>
+        <li>nRF connect：在手机打开网址下载，用于查看设备即考勤机的mac地址</li>
+      </ul>
+      <p>需要准备的工具并不必须为esp32C3开发板，只需要是能发送和扫描广播数据的设备都可以，你也可以实现适合你自己的蓝牙打卡方案。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>蓝牙广播</th>
+            <th>优点</th>
+            <th>缺点</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>手机广播</td>
+            <td>用软件模拟蓝牙广播，图形化操作界面，无需编写代码</td>
+            <td>对于提高自己没有帮助</td>
+          </tr>
+          <tr>
+            <td>esp32C3广播</td>
+            <td>有助于嵌入式开发入门</td>
+            <td>门槛较高，过程相对复杂</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>对于动态蓝牙广播设备来说，你需要一个额外的设备进行蓝牙广播数据的获取，那么如何判断考勤机是否是动态蓝牙广播设备呢？从实用角度出发，我们可以简单地通过观察广播数据来作出判断，这在后面的流程中会提到。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>蓝牙扫描（获取动态数据）</th>
+            <th>优点</th>
+            <th>缺点</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>手机扫描</td>
+            <td>1.有成熟的软件可以进行蓝牙扫描<br>2.不用外接电源，无需考虑续航问题<br>3.可以使用移动数据进行通信</td>
+            <td>1.需要额外一部手机，成本较大<br>2.体积较大，易被发现</td>
+          </tr>
+          <tr>
+            <td>esp32C3扫描</td>
+            <td>1.轻便小巧，可以轻易隐匿放置<br>2.成本低，丢了也不心疼</td>
+            <td>1.没有外接电源无法正常工作<br>2.放置位置必须有网络，内网也行，但必须得有网络<br>3.门槛较高，过程相对复杂</td>
+          </tr>
+        </tbody>
+      </table>
+      <h2>静态蓝牙广播解决方案</h2>
+      <ol>
+        <li>手机下载<a href="https://www.pgyer.com/DYgS"> nRF connect </a></li>
+        <li>打开软件，打开蓝牙和位置，下拉或点击scan进行扫描</li>
+        <li>找到考勤机对应的数据</li>
+      </ol>
+      <p>这里有几个建议和说明：</p>
+      <ul>
+        <li>最好在上班前或下班后进行数据获取，这样可以避免其它牛马的蓝牙设备干扰；</li>
+        <li>考勤机的信息包含了公司信息（company），当不确定数据是否为考勤机发出时可以百度搜索公司名字，看它的主营业务是否为pos机，室内定位相关</li>
+        <li>
+          <strong>特别的</strong>，观察蓝牙所广播的数据，如果以<em>000D</em>、<em>000F</em>、<em>000B</em>和<em>0x20</em>结尾则说明广播是动态的（x为表示任意数字），如下图中蓝牙数据以<em>5331</em>结尾；如果不以上述数据结尾也有可能为动态蓝牙，请通过实践具体判断。
+        </li>
+      </ul>
+      <div class="Carousel-container">
+        <div class="Carousel-item">
+          <input type="radio" name="carousel-aceiubq" class="carousel-tab" checked="">
+          <img class="img" src="http://112.74.72.34:5003/static/markdown/dingding/nRF%20connect/f1" alt="}" title="">
+          <img class="img-virtual" src="http://112.74.72.34:5003/static/markdown/dingding/nRF%20connect/f1" alt=""
+            title="">
+        </div>
+        <div class="Carousel-item">
+          <input type="radio" name="carousel-aceiubq" class="carousel-tab">
+          <img class="img" src="http://112.74.72.34:5003/static/markdown/dingding/nRF%20connect/f2" alt="}" title="">
+          <img class="img-virtual" src="http://112.74.72.34:5003/static/markdown/dingding/nRF%20connect/f2" alt=""
+            title="">
+        </div>
+        <div class="Carousel-item">
+          <input type="radio" name="carousel-aceiubq" class="carousel-tab">
+          <img class="img" src="http://112.74.72.34:5003/static/markdown/dingding/nRF%20connect/f3" alt="}" title="">
+          <img class="img-virtual" src="http://112.74.72.34:5003/static/markdown/dingding/nRF%20connect/f3" alt=""
+            title="">
+        </div>
+      </div>
+
+      <h3>Arduino</h3>
+      <p>下载：<a href="https://www.arduino.cc/en/software"> Arduino </a></p>
+      <ol>
+        <li>拿出<em>esp32C3</em>开发板和数据线并连接电脑，打开电脑的设备管理器（右键我的电脑点击属性，在搜索框中输入设备管理器），查看开发板的串口</li>
+        <li>
+          点击.exe文件打开<em>Arduino</em>，进行<strong>基础工具选项配置</strong>（如图3所示），<strong>开发板环境安装</strong>、<strong>程序所需依赖的安装</strong>
+        </li>
+        <li>
+          注意esp32C3的开发环境安装需要从github拉取，国内连接不稳定可能需要科学上网，如果这对你有些困难可以向我寻求帮助。在科学上网后还需要在<em>Arduino</em>中设置使用代理，如图4和图5所示。注意，对于示例中的代码而言我下载的版本为<strong>2.0.7</strong>，如果使用最新版本程序将不能运行。
+        </li>
+        <li>下载如图6所展示的所有依赖</li>
+      </ol>
+      <div class="Carousel-container">
+        <div class="Carousel-item">
+          <input type="radio" name="carousel-d8yumfs" class="carousel-tab" checked="">
+          <img class="img" src="http://112.74.72.34:5003/static/markdown/dingding/Arduino/f1" alt="}" title="">
+          <img class="img-virtual" src="http://112.74.72.34:5003/static/markdown/dingding/Arduino/f1" alt="" title="">
+        </div>
+        <div class="Carousel-item">
+          <input type="radio" name="carousel-d8yumfs" class="carousel-tab">
+          <img class="img" src="http://112.74.72.34:5003/static/markdown/dingding/Arduino/f2" alt="}" title="">
+          <img class="img-virtual" src="http://112.74.72.34:5003/static/markdown/dingding/Arduino/f2" alt="" title="">
+        </div>
+        <div class="Carousel-item">
+          <input type="radio" name="carousel-d8yumfs" class="carousel-tab">
+          <img class="img" src="http://112.74.72.34:5003/static/markdown/dingding/Arduino/f3" alt="}" title="">
+          <img class="img-virtual" src="http://112.74.72.34:5003/static/markdown/dingding/Arduino/f3" alt="" title="">
+        </div>
+        <div class="Carousel-item">
+          <input type="radio" name="carousel-d8yumfs" class="carousel-tab">
+          <img class="img" src="http://112.74.72.34:5003/static/markdown/dingding/Arduino/f4" alt="}" title="">
+          <img class="img-virtual" src="http://112.74.72.34:5003/static/markdown/dingding/Arduino/f4" alt="" title="">
+        </div>
+        <div class="Carousel-item">
+          <input type="radio" name="carousel-d8yumfs" class="carousel-tab">
+          <img class="img" src="http://112.74.72.34:5003/static/markdown/dingding/Arduino/f5" alt="}" title="">
+          <img class="img-virtual" src="http://112.74.72.34:5003/static/markdown/dingding/Arduino/f5" alt="" title="">
+        </div>
+        <div class="Carousel-item">
+          <input type="radio" name="carousel-d8yumfs" class="carousel-tab">
+          <img class="img" src="http://112.74.72.34:5003/static/markdown/dingding/Arduino/f6" alt="}" title="">
+          <img class="img-virtual" src="http://112.74.72.34:5003/static/markdown/dingding/Arduino/f6" alt="" title="">
+        </div>
+      </div>
+
+      <h3>粗糙编程</h3>
+      <p>参考：<a href="https://github.com/zanjie1999/dingBle"> 不爱笑的张杰-dingBle </a></p>
+      <p>对于任何一件事，我们都需要明确我们的目标是什么，编程更是如此，想比做更加重要<br>目前我们的目标是：<strong>设置虚拟mac和广播数据！并使用esp32C3进行广播！</strong></p>
+      <p>详细的代码及注释如下，对于这部分代码有几个需要说明的点：</p>
+      <ol>
+        <li>
+          使用时需要更改代码中的设备的<strong>mac地址</strong>和<strong>广播数据</strong>；如何获取考勤机的mac地址在前文中有提及；对于0x042233FFEE这个广播数据而言<code>bleRaw</code>变量值为<code>{ 0x04, 0x22, 0x33, 0xFF, 0xEE}</code>
+        </li>
+        <li>
+          蓝牙分为传统蓝牙和低功耗蓝牙，这里我们进行的是低功耗蓝牙广播，代码中进行了蓝牙服务的创建，但是创建服务这一步是无关紧要的，对于钉钉打卡而言只需要改动代码中的mac地址和广播数据就行，关于低功耗蓝牙服务的详情可以点击<a
+            href="https://www.bilibili.com/video/BV1ad4y1d7AM/?spm_id_from=333.337.search-card.all.click&amp;vd_source=0e085cfddd737599e7075bd632dad09e">此处</a>；
+        </li>
+        <li>
+          在输入界面中输入程序后点击编译再上传或直接上传，esp32C3就会运行这段程序了，这时打开串口监视器就可以看到打印的信息了，如果没有信息的话请检查波特率是否为115200，工具中的配置是否正确。建议使用电脑usb电源口运行开发板，如果需要其它电源建议电流小于1000mA
+        </li>
+      </ol>
+      <div class="Carousel-container">
+        <div class="Carousel-item">
+          <input type="radio" name="carousel-pn5mxi5" class="carousel-tab" checked="">
+          <img class="img" src="http://112.74.72.34:5003/static/markdown/dingding/Arduino/f7" alt="}" title="">
+          <img class="img-virtual" src="http://112.74.72.34:5003/static/markdown/dingding/Arduino/f7" alt="" title="">
+        </div>
+        <div class="Carousel-item">
+          <input type="radio" name="carousel-pn5mxi5" class="carousel-tab">
+          <img class="img" src="http://112.74.72.34:5003/static/markdown/dingding/Arduino/f8" alt="}" title="">
+          <img class="img-virtual" src="http://112.74.72.34:5003/static/markdown/dingding/Arduino/f8" alt="" title="">
+        </div>
+      </div>
+
+
+      <ul class="mix-code-container">
+        <li class="mix-tab-item">
+          <input type="radio" class="mix-tab" name="tabs-1q4kz1c" id="tabs-1q4kz1c-tab0" checked="">
+          <label for="tabs-1q4kz1c-tab0">蓝牙广播</label>
+          <div class="mix-code-content" id="tabs-1q4kz1c-content0">
+            <pre><code class="hljs language-cpp"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">"BLEDevice.h"</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">"BLEUtils.h"</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">"esp_sleep.h"</span></span><br><br>BLEAdvertising *pAdvertising;<br><br><span class="hljs-type">uint8_t</span> bleMac[<span class="hljs-number">6</span>] = {<span class="hljs-number">0x11</span>, <span class="hljs-number">0x22</span>, <span class="hljs-number">0x33</span>, <span class="hljs-number">0x44</span>, <span class="hljs-number">0x55</span>, <span class="hljs-number">0x66</span>}; <span class="hljs-comment">// 假设考勤机mac地址为11:22:33:44:55:66</span>
+    <span class="hljs-comment">// 0-30 前31组</span>
+    <span class="hljs-type">uint8_t</span> bleRaw[] = {
+      <span class="hljs-number">0x02</span>, <span class="hljs-number">0x01</span>, <span class="hljs-number">0x06</span>, <span class="hljs-number">0x03</span>, <span class="hljs-number">0x03</span>, <span class="hljs-number">0x3C</span>, <span class="hljs-number">0xFE</span>, <span class="hljs-number">0x17</span>, <span class="hljs-number">0xFF</span>, <span class="hljs-number">0x00</span>, <span class="hljs-number">0x02</span>, <span class="hljs-number">0x72</span>, <span class="hljs-number">0x00</span>, <span class="hljs-number">0x1F</span>, <span class="hljs-number">0x71</span>, <span class="hljs-number">0x5A</span>, <span class="hljs-number">0x4B</span>, <span class="hljs-number">0xA6</span>, <span class="hljs-number">0xBA</span>, <span class="hljs-number">0xB5</span>, <span class="hljs-number">0x00</span>, <span class="hljs-number">0xC4</span>, <span class="hljs-number">0xF8</span>, <span class="hljs-number">0xA7</span>, <span class="hljs-number">0x63</span>, <span class="hljs-number">0x9E</span>, <span class="hljs-number">0xCA</span>, <span class="hljs-number">0xCC</span>, <span class="hljs-number">0x00</span>, <span class="hljs-number">0x02</span>, <span class="hljs-number">0x20</span>, 
+    }; <span class="hljs-comment">// 去除复制得到的文本最前面的0x后，两两一组填入，由于数据很长，我们可以写一个简单的脚本完成这个工作</span>
+    <span class="hljs-comment">// 如果复制出来的raw超过31组 那么把它改为true并维护下面的数组</span>
+    boolean rawMoreThan31 = <span class="hljs-literal">false</span>;
+    <span class="hljs-comment">// 31-end</span>
+    <span class="hljs-type">uint8_t</span> bleRaw32[] = {<span class="hljs-number">0x0C</span>,<span class="hljs-number">0x09</span>,<span class="hljs-number">0x52</span>,<span class="hljs-number">0x54</span>,<span class="hljs-number">0x4B</span>,<span class="hljs-number">0x5F</span>,<span class="hljs-number">0x42</span>,<span class="hljs-number">0x54</span>,<span class="hljs-number">0x5F</span>,<span class="hljs-number">0x34</span>,<span class="hljs-number">0x2E</span>,<span class="hljs-number">0x31</span>,<span class="hljs-number">0x00</span>};<br><br><span class="hljs-meta">#<span class="hljs-keyword">define</span> SERVICE_UUID <span class="hljs-string">"0000FE3C-0000-1000-8000-00805F9B34FB"</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">define</span> CHARACTERISTIC_ONE_UUID <span class="hljs-string">"0000FE1B-0000-1000-8000-00805F9B34FB"</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">define</span> CHARACTERISTIC_TWO_UUID <span class="hljs-string">"0000FE1C-0000-1000-8000-00805F9B34FB"</span></span><br><br><span class="hljs-comment">// 回调函数，用于处理特性通知</span>
+    <span class="hljs-keyword">class</span> <span class="hljs-title class_">MyCallbacks</span> : <span class="hljs-keyword">public</span> BLECharacteristicCallbacks {
+      <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">onRead</span><span class="hljs-params">(BLECharacteristic* pCharacteristic)</span> </span>{
+        std::string value = pCharacteristic-&gt;<span class="hljs-built_in">getValue</span>();
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Characteristic "</span>);
+        Serial.<span class="hljs-built_in">print</span>(pCharacteristic-&gt;<span class="hljs-built_in">getUUID</span>().<span class="hljs-built_in">toString</span>().<span class="hljs-built_in">c_str</span>());
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">" read: "</span>);
+        Serial.<span class="hljs-built_in">println</span>(value.<span class="hljs-built_in">c_str</span>());
+      }<br><br>  <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">onWrite</span><span class="hljs-params">(BLECharacteristic* pCharacteristic)</span> </span>{
+        std::string value = pCharacteristic-&gt;<span class="hljs-built_in">getValue</span>();
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Characteristic "</span>);
+        Serial.<span class="hljs-built_in">print</span>(pCharacteristic-&gt;<span class="hljs-built_in">getUUID</span>().<span class="hljs-built_in">toString</span>().<span class="hljs-built_in">c_str</span>());
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">" write: "</span>);
+        Serial.<span class="hljs-built_in">println</span>(value.<span class="hljs-built_in">c_str</span>());
+      }<br><br>  <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">onNotify</span><span class="hljs-params">(BLECharacteristic* pCharacteristic)</span> </span>{
+        std::string value = pCharacteristic-&gt;<span class="hljs-built_in">getValue</span>();
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Characteristic "</span>);
+        Serial.<span class="hljs-built_in">print</span>(pCharacteristic-&gt;<span class="hljs-built_in">getUUID</span>().<span class="hljs-built_in">toString</span>().<span class="hljs-built_in">c_str</span>());
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">" notify: "</span>);
+        Serial.<span class="hljs-built_in">println</span>(value.<span class="hljs-built_in">c_str</span>());
+      }
+    };<br><br><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">setup</span><span class="hljs-params">()</span> </span>{
+      Serial.<span class="hljs-built_in">begin</span>(<span class="hljs-number">115200</span>); <span class="hljs-comment">// 初始化串口</span>
+      <span class="hljs-built_in">delay</span>(<span class="hljs-number">2000</span>);<br><br>  <span class="hljs-comment">// esp32没有提供设置蓝牙mac地址的api 通过查看esp32的源代码</span>
+      <span class="hljs-comment">// 此操作将根据蓝牙mac算出base mac</span>
+      <span class="hljs-keyword">if</span> (UNIVERSAL_MAC_ADDR_NUM == FOUR_UNIVERSAL_MAC_ADDR) {
+        bleMac[<span class="hljs-number">5</span>] -= <span class="hljs-number">2</span>;
+      } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (UNIVERSAL_MAC_ADDR_NUM == TWO_UNIVERSAL_MAC_ADDR) {
+        bleMac[<span class="hljs-number">5</span>] -= <span class="hljs-number">1</span>;
+      }
+      <span class="hljs-built_in">esp_base_mac_addr_set</span>(bleMac);<br><br>  <span class="hljs-comment">// 初始化</span>
+      BLEDevice::<span class="hljs-built_in">init</span>(<span class="hljs-string">""</span>);<br><br>  <span class="hljs-comment">// Create the BLE Server</span>
+      BLEServer *pServer = BLEDevice::<span class="hljs-built_in">createServer</span>(); <span class="hljs-comment">// &lt;-- no longer required to instantiate BLEServer, less flash and ram usage</span><br><br>  <span class="hljs-comment">// Create the BLE Service</span>
+      BLEService *pService = pServer-&gt;<span class="hljs-built_in">createService</span>(SERVICE_UUID);
+      <span class="hljs-comment">// Create a BLE Characteristic</span>
+      BLECharacteristic *pCharacteristic_one = pService-&gt;<span class="hljs-built_in">createCharacteristic</span>(
+                                              CHARACTERISTIC_ONE_UUID,
+                                              BLECharacteristic::PROPERTY_READ |
+                                              BLECharacteristic::PROPERTY_NOTIFY
+                                            );<br><br>  BLECharacteristic *pCharacteristic_two = pService-&gt;<span class="hljs-built_in">createCharacteristic</span>(
+                                              CHARACTERISTIC_TWO_UUID,
+                                              BLECharacteristic::PROPERTY_WRITE
+                                            );<br><br>  <span class="hljs-comment">// 设置回调函数</span>
+      pCharacteristic_two-&gt;<span class="hljs-built_in">setCallbacks</span>(<span class="hljs-keyword">new</span> <span class="hljs-built_in">MyCallbacks</span>());
+      pCharacteristic_one-&gt;<span class="hljs-built_in">setCallbacks</span>(<span class="hljs-keyword">new</span> <span class="hljs-built_in">MyCallbacks</span>());<br><br>  <span class="hljs-comment">// Start the service</span>
+      pService-&gt;<span class="hljs-built_in">start</span>();<br><br>  pAdvertising = pServer-&gt;<span class="hljs-built_in">getAdvertising</span>();<br><br>  <span class="hljs-comment">// 设备信息设置成空白的</span>
+      BLEAdvertisementData oScanResponseData = <span class="hljs-built_in">BLEAdvertisementData</span>();
+      pAdvertising-&gt;<span class="hljs-built_in">setScanResponseData</span>(oScanResponseData);<br><br>  <span class="hljs-comment">// 里面有个 m_customScanResponseData = true; 和 m_customScanResponseData = true; 所以只能先随便设置一下</span>
+      BLEAdvertisementData oAdvertisementData = <span class="hljs-built_in">BLEAdvertisementData</span>();
+      pAdvertising-&gt;<span class="hljs-built_in">setAdvertisementData</span>(oAdvertisementData);<br><br>  <span class="hljs-comment">// 简单粗暴直接底层api重新设置一下抓到的raw</span>
+      <span class="hljs-type">esp_err_t</span> errRc = ::<span class="hljs-built_in">esp_ble_gap_config_adv_data_raw</span>(bleRaw, <span class="hljs-number">31</span>);
+      <span class="hljs-keyword">if</span> (errRc != ESP_OK) {
+        Serial.<span class="hljs-built_in">printf</span>(<span class="hljs-string">"esp_ble_gap_config_adv_data_raw: %d\n"</span>, errRc);
+      }
+      <span class="hljs-comment">// 超过31</span>
+      <span class="hljs-keyword">if</span> (rawMoreThan31) {
+        errRc = ::<span class="hljs-built_in">esp_ble_gap_config_scan_rsp_data_raw</span>(bleRaw32, <span class="hljs-built_in">sizeof</span>(bleRaw32)/<span class="hljs-built_in">sizeof</span>(bleRaw32[<span class="hljs-number">0</span>]));
+        <span class="hljs-keyword">if</span> (errRc != ESP_OK) {
+          Serial.<span class="hljs-built_in">printf</span>(<span class="hljs-string">"esp_ble_gap_config_scan_rsp_data_raw: %d\n"</span>, errRc);
+        }
+      }<br><br>  pAdvertising-&gt;<span class="hljs-built_in">start</span>();
+    }<br><br><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">loop</span><span class="hljs-params">()</span> </span>{
+      <span class="hljs-comment">// 闪灯灯 至于为什么是串口输出，因为并没有内置led，但拥有串口指示灯</span>
+      Serial.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Sparkle"</span>);
+      <span class="hljs-built_in">delay</span>(<span class="hljs-number">1000</span>);
+      <span class="hljs-comment">// 20分钟去待机避免忘了关</span>
+      <span class="hljs-keyword">if</span> (<span class="hljs-built_in">millis</span>() &gt; <span class="hljs-number">1200000</span>) {
+        <span class="hljs-built_in">esp_deep_sleep_start</span>();
+      }
+    }
+    </code></pre>
+          </div>
+          <div class="mix-code-content-virtual" id="tabs-1q4kz1c-content0">
+            <pre><code class="hljs language-cpp"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">"BLEDevice.h"</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">"BLEUtils.h"</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">"esp_sleep.h"</span></span><br><br>BLEAdvertising *pAdvertising;<br><br><span class="hljs-type">uint8_t</span> bleMac[<span class="hljs-number">6</span>] = {<span class="hljs-number">0x11</span>, <span class="hljs-number">0x22</span>, <span class="hljs-number">0x33</span>, <span class="hljs-number">0x44</span>, <span class="hljs-number">0x55</span>, <span class="hljs-number">0x66</span>}; <span class="hljs-comment">// 假设考勤机mac地址为11:22:33:44:55:66</span>
+    <span class="hljs-comment">// 0-30 前31组</span>
+    <span class="hljs-type">uint8_t</span> bleRaw[] = {
+      <span class="hljs-number">0x02</span>, <span class="hljs-number">0x01</span>, <span class="hljs-number">0x06</span>, <span class="hljs-number">0x03</span>, <span class="hljs-number">0x03</span>, <span class="hljs-number">0x3C</span>, <span class="hljs-number">0xFE</span>, <span class="hljs-number">0x17</span>, <span class="hljs-number">0xFF</span>, <span class="hljs-number">0x00</span>, <span class="hljs-number">0x02</span>, <span class="hljs-number">0x72</span>, <span class="hljs-number">0x00</span>, <span class="hljs-number">0x1F</span>, <span class="hljs-number">0x71</span>, <span class="hljs-number">0x5A</span>, <span class="hljs-number">0x4B</span>, <span class="hljs-number">0xA6</span>, <span class="hljs-number">0xBA</span>, <span class="hljs-number">0xB5</span>, <span class="hljs-number">0x00</span>, <span class="hljs-number">0xC4</span>, <span class="hljs-number">0xF8</span>, <span class="hljs-number">0xA7</span>, <span class="hljs-number">0x63</span>, <span class="hljs-number">0x9E</span>, <span class="hljs-number">0xCA</span>, <span class="hljs-number">0xCC</span>, <span class="hljs-number">0x00</span>, <span class="hljs-number">0x02</span>, <span class="hljs-number">0x20</span>, 
+    }; <span class="hljs-comment">// 去除复制得到的文本最前面的0x后，两两一组填入，由于数据很长，我们可以写一个简单的脚本完成这个工作</span>
+    <span class="hljs-comment">// 如果复制出来的raw超过31组 那么把它改为true并维护下面的数组</span>
+    boolean rawMoreThan31 = <span class="hljs-literal">false</span>;
+    <span class="hljs-comment">// 31-end</span>
+    <span class="hljs-type">uint8_t</span> bleRaw32[] = {<span class="hljs-number">0x0C</span>,<span class="hljs-number">0x09</span>,<span class="hljs-number">0x52</span>,<span class="hljs-number">0x54</span>,<span class="hljs-number">0x4B</span>,<span class="hljs-number">0x5F</span>,<span class="hljs-number">0x42</span>,<span class="hljs-number">0x54</span>,<span class="hljs-number">0x5F</span>,<span class="hljs-number">0x34</span>,<span class="hljs-number">0x2E</span>,<span class="hljs-number">0x31</span>,<span class="hljs-number">0x00</span>};<br><br><span class="hljs-meta">#<span class="hljs-keyword">define</span> SERVICE_UUID <span class="hljs-string">"0000FE3C-0000-1000-8000-00805F9B34FB"</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">define</span> CHARACTERISTIC_ONE_UUID <span class="hljs-string">"0000FE1B-0000-1000-8000-00805F9B34FB"</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">define</span> CHARACTERISTIC_TWO_UUID <span class="hljs-string">"0000FE1C-0000-1000-8000-00805F9B34FB"</span></span><br><br><span class="hljs-comment">// 回调函数，用于处理特性通知</span>
+    <span class="hljs-keyword">class</span> <span class="hljs-title class_">MyCallbacks</span> : <span class="hljs-keyword">public</span> BLECharacteristicCallbacks {
+      <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">onRead</span><span class="hljs-params">(BLECharacteristic* pCharacteristic)</span> </span>{
+        std::string value = pCharacteristic-&gt;<span class="hljs-built_in">getValue</span>();
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Characteristic "</span>);
+        Serial.<span class="hljs-built_in">print</span>(pCharacteristic-&gt;<span class="hljs-built_in">getUUID</span>().<span class="hljs-built_in">toString</span>().<span class="hljs-built_in">c_str</span>());
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">" read: "</span>);
+        Serial.<span class="hljs-built_in">println</span>(value.<span class="hljs-built_in">c_str</span>());
+      }<br><br>  <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">onWrite</span><span class="hljs-params">(BLECharacteristic* pCharacteristic)</span> </span>{
+        std::string value = pCharacteristic-&gt;<span class="hljs-built_in">getValue</span>();
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Characteristic "</span>);
+        Serial.<span class="hljs-built_in">print</span>(pCharacteristic-&gt;<span class="hljs-built_in">getUUID</span>().<span class="hljs-built_in">toString</span>().<span class="hljs-built_in">c_str</span>());
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">" write: "</span>);
+        Serial.<span class="hljs-built_in">println</span>(value.<span class="hljs-built_in">c_str</span>());
+      }<br><br>  <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">onNotify</span><span class="hljs-params">(BLECharacteristic* pCharacteristic)</span> </span>{
+        std::string value = pCharacteristic-&gt;<span class="hljs-built_in">getValue</span>();
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Characteristic "</span>);
+        Serial.<span class="hljs-built_in">print</span>(pCharacteristic-&gt;<span class="hljs-built_in">getUUID</span>().<span class="hljs-built_in">toString</span>().<span class="hljs-built_in">c_str</span>());
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">" notify: "</span>);
+        Serial.<span class="hljs-built_in">println</span>(value.<span class="hljs-built_in">c_str</span>());
+      }
+    };<br><br><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">setup</span><span class="hljs-params">()</span> </span>{
+      Serial.<span class="hljs-built_in">begin</span>(<span class="hljs-number">115200</span>); <span class="hljs-comment">// 初始化串口</span>
+      <span class="hljs-built_in">delay</span>(<span class="hljs-number">2000</span>);<br><br>  <span class="hljs-comment">// esp32没有提供设置蓝牙mac地址的api 通过查看esp32的源代码</span>
+      <span class="hljs-comment">// 此操作将根据蓝牙mac算出base mac</span>
+      <span class="hljs-keyword">if</span> (UNIVERSAL_MAC_ADDR_NUM == FOUR_UNIVERSAL_MAC_ADDR) {
+        bleMac[<span class="hljs-number">5</span>] -= <span class="hljs-number">2</span>;
+      } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (UNIVERSAL_MAC_ADDR_NUM == TWO_UNIVERSAL_MAC_ADDR) {
+        bleMac[<span class="hljs-number">5</span>] -= <span class="hljs-number">1</span>;
+      }
+      <span class="hljs-built_in">esp_base_mac_addr_set</span>(bleMac);<br><br>  <span class="hljs-comment">// 初始化</span>
+      BLEDevice::<span class="hljs-built_in">init</span>(<span class="hljs-string">""</span>);<br><br>  <span class="hljs-comment">// Create the BLE Server</span>
+      BLEServer *pServer = BLEDevice::<span class="hljs-built_in">createServer</span>(); <span class="hljs-comment">// &lt;-- no longer required to instantiate BLEServer, less flash and ram usage</span><br><br>  <span class="hljs-comment">// Create the BLE Service</span>
+      BLEService *pService = pServer-&gt;<span class="hljs-built_in">createService</span>(SERVICE_UUID);
+      <span class="hljs-comment">// Create a BLE Characteristic</span>
+      BLECharacteristic *pCharacteristic_one = pService-&gt;<span class="hljs-built_in">createCharacteristic</span>(
+                                              CHARACTERISTIC_ONE_UUID,
+                                              BLECharacteristic::PROPERTY_READ |
+                                              BLECharacteristic::PROPERTY_NOTIFY
+                                            );<br><br>  BLECharacteristic *pCharacteristic_two = pService-&gt;<span class="hljs-built_in">createCharacteristic</span>(
+                                              CHARACTERISTIC_TWO_UUID,
+                                              BLECharacteristic::PROPERTY_WRITE
+                                            );<br><br>  <span class="hljs-comment">// 设置回调函数</span>
+      pCharacteristic_two-&gt;<span class="hljs-built_in">setCallbacks</span>(<span class="hljs-keyword">new</span> <span class="hljs-built_in">MyCallbacks</span>());
+      pCharacteristic_one-&gt;<span class="hljs-built_in">setCallbacks</span>(<span class="hljs-keyword">new</span> <span class="hljs-built_in">MyCallbacks</span>());<br><br>  <span class="hljs-comment">// Start the service</span>
+      pService-&gt;<span class="hljs-built_in">start</span>();<br><br>  pAdvertising = pServer-&gt;<span class="hljs-built_in">getAdvertising</span>();<br><br>  <span class="hljs-comment">// 设备信息设置成空白的</span>
+      BLEAdvertisementData oScanResponseData = <span class="hljs-built_in">BLEAdvertisementData</span>();
+      pAdvertising-&gt;<span class="hljs-built_in">setScanResponseData</span>(oScanResponseData);<br><br>  <span class="hljs-comment">// 里面有个 m_customScanResponseData = true; 和 m_customScanResponseData = true; 所以只能先随便设置一下</span>
+      BLEAdvertisementData oAdvertisementData = <span class="hljs-built_in">BLEAdvertisementData</span>();
+      pAdvertising-&gt;<span class="hljs-built_in">setAdvertisementData</span>(oAdvertisementData);<br><br>  <span class="hljs-comment">// 简单粗暴直接底层api重新设置一下抓到的raw</span>
+      <span class="hljs-type">esp_err_t</span> errRc = ::<span class="hljs-built_in">esp_ble_gap_config_adv_data_raw</span>(bleRaw, <span class="hljs-number">31</span>);
+      <span class="hljs-keyword">if</span> (errRc != ESP_OK) {
+        Serial.<span class="hljs-built_in">printf</span>(<span class="hljs-string">"esp_ble_gap_config_adv_data_raw: %d\n"</span>, errRc);
+      }
+      <span class="hljs-comment">// 超过31</span>
+      <span class="hljs-keyword">if</span> (rawMoreThan31) {
+        errRc = ::<span class="hljs-built_in">esp_ble_gap_config_scan_rsp_data_raw</span>(bleRaw32, <span class="hljs-built_in">sizeof</span>(bleRaw32)/<span class="hljs-built_in">sizeof</span>(bleRaw32[<span class="hljs-number">0</span>]));
+        <span class="hljs-keyword">if</span> (errRc != ESP_OK) {
+          Serial.<span class="hljs-built_in">printf</span>(<span class="hljs-string">"esp_ble_gap_config_scan_rsp_data_raw: %d\n"</span>, errRc);
+        }
+      }<br><br>  pAdvertising-&gt;<span class="hljs-built_in">start</span>();
+    }<br><br><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">loop</span><span class="hljs-params">()</span> </span>{
+      <span class="hljs-comment">// 闪灯灯 至于为什么是串口输出，因为并没有内置led，但拥有串口指示灯</span>
+      Serial.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Sparkle"</span>);
+      <span class="hljs-built_in">delay</span>(<span class="hljs-number">1000</span>);
+      <span class="hljs-comment">// 20分钟去待机避免忘了关</span>
+      <span class="hljs-keyword">if</span> (<span class="hljs-built_in">millis</span>() &gt; <span class="hljs-number">1200000</span>) {
+        <span class="hljs-built_in">esp_deep_sleep_start</span>();
+      }
+    }
+    </code></pre>
+          </div>
+        </li>
+      </ul>
+
+      <h2>动态蓝牙广播解决方案</h2>
+      <h3>mqtt服务</h3>
+      <blockquote>
+        <p>
+            如果你的考勤机是静态广播类型的那么你应该已经可以实现远程蓝牙打卡了，但是多数资本家会愿意花更多钱使用更难作弊的动态广播打卡机，这种打卡机的广播数据是在实时变化的，所以之前我们在代码中写死广播数据的做法不再通用。那么很自然地我们想到，能不能实时地获取打卡机的广播数据呢？答案是肯定的，由于只有在打卡机的蓝牙范围内才能获取广播数据，所以我们必须要有额外的一个设备放在它的蓝牙范围内，通过粗糙编程获取打卡数据后，问题就转化为了如何获取这个设备获取到的蓝牙广播，因为这个设备在公司，而我们有可能在世界的任何一个角落。我使用mqtt服务进行数据的获取。
+        </p>
+      </blockquote>
+      <h4>建立服务器</h4>
+      <blockquote>
+        <p>可以使用公共的服务器进行测试和使用，但是建立自己的服务器能保证信息的时效性，公共服务响应时间为一分钟左右，即esp32发布消息后，客户端需要过一分钟才能看到更新的消息，我使用<a
+            href="https://accounts-zh.emqx.com/signin?continue=https%3A%2F%2Fcloud.emqx.com%2Fconsole%2F"> EMQX Platform
+          </a>建立服务器，这是完全免费的！</p>
+      </blockquote>
+      <ol>
+        <li>进入官网后点击新建部署，设置部署的名称，然后点击右下角的立即部署，如图1所示</li>
+        <li>记录连接地址和端口号备用，如图2所示</li>
+        <li>添加用户，如图3所示</li>
+      </ol>
+      <div class="Carousel-container">
+        <div class="Carousel-item">
+          <input type="radio" name="carousel-kcqnyn4" class="carousel-tab" checked="">
+          <img class="img" src="http://112.74.72.34:5003/static/markdown/dingding/EMQX/f1" alt="}" title="">
+          <img class="img-virtual" src="http://112.74.72.34:5003/static/markdown/dingding/EMQX/f1" alt="" title="">
+        </div>
+        <div class="Carousel-item">
+          <input type="radio" name="carousel-kcqnyn4" class="carousel-tab">
+          <img class="img" src="http://112.74.72.34:5003/static/markdown/dingding/EMQX/f2" alt="}" title="">
+          <img class="img-virtual" src="http://112.74.72.34:5003/static/markdown/dingding/EMQX/f2" alt="" title="">
+        </div>
+        <div class="Carousel-item">
+          <input type="radio" name="carousel-kcqnyn4" class="carousel-tab">
+          <img class="img" src="http://112.74.72.34:5003/static/markdown/dingding/EMQX/f3" alt="}" title="">
+          <img class="img-virtual" src="http://112.74.72.34:5003/static/markdown/dingding/EMQX/f3" alt="" title="">
+        </div>
+      </div>
+
+
+      <h3>客户端</h3>
+      <p>下载：<a href="https://apps.microsoft.com/detail/9pp8sfm082wd?ocid=badge&amp;rtc=1&amp;hl=zh-cn&amp;gl=CN">mqtt
+          explore</a></p>
+      <h4>设置</h4>
+      <ol>
+        <li>可点击<a href="https://www.cnblogs.com/xingboy/p/16071606.html">此处</a>查看设置详情或阅读下方文字提示</li>
+        <li>可以直接使用默认的这个设置（见图1），这样将会使用公共的服务器，信息更新速度将大大降低</li>
+        <li>
+          点击左上角<em>connection</em>按钮新建连接，设置好<strong>地址</strong>、<strong>端口号</strong>，<strong>tls加密</strong>、<strong>用户名和密码</strong>，如图2所示
+        </li>
+        <li>点击<em>ADVANCED</em>按钮订阅主题，对于本文中的代码，我们需要添加如图所示的三个主题，设置完成后返回；可以点击<em>SAVE</em>保存设置，否则每次都需重新输入</li>
+        <li>点击<em>CONNECT</em>按钮进行连接，进入后的界面介绍可以参考第一点的链接</li>
+      </ol>
+      <div class="Carousel-container">
+        <div class="Carousel-item">
+          <input type="radio" name="carousel-if3y0ij" class="carousel-tab" checked="">
+          <img class="img" src="http://112.74.72.34:5003/static/markdown/dingding/mqtt%20explorer/f1" alt="}" title="">
+          <img class="img-virtual" src="http://112.74.72.34:5003/static/markdown/dingding/mqtt%20explorer/f1" alt=""
+            title="">
+        </div>
+        <div class="Carousel-item">
+          <input type="radio" name="carousel-if3y0ij" class="carousel-tab">
+          <img class="img" src="http://112.74.72.34:5003/static/markdown/dingding/mqtt%20explorer/f2" alt="}" title="">
+          <img class="img-virtual" src="http://112.74.72.34:5003/static/markdown/dingding/mqtt%20explorer/f2" alt=""
+            title="">
+        </div>
+        <div class="Carousel-item">
+          <input type="radio" name="carousel-if3y0ij" class="carousel-tab">
+          <img class="img" src="http://112.74.72.34:5003/static/markdown/dingding/mqtt%20explorer/f3" alt="}" title="">
+          <img class="img-virtual" src="http://112.74.72.34:5003/static/markdown/dingding/mqtt%20explorer/f3" alt=""
+            title="">
+        </div>
+      </div>
+
+      <h3>粗糙编程</h3>
+      <p>参考：<a href="https://docs.emqx.com/zh/cloud/latest/connect_to_deployments/esp32.html">esp32连接MQTT服务器</a></p>
+      <ol>
+        <li>在这部分的代码中，我们用到了<em>ArduinoBle</em>这个库，所以先进行这个库的安装，如图1</li>
+        <li>按照注释更改内容：<strong>Wifi名称与密码</strong>、<strong>考勤机mac地址</strong></li>
+        <li>
+          如果使用自己的服务器，请按照注释进行设置：<strong>设置根证书</strong>、<strong>设置用户名和密码并在函数中传入</strong>、<strong>使用<code>WiFiClientSecure</code>类型而不是<code>WiFiClient</code></strong>
+        </li>
+        <li>同静态广播解决方案的粗糙编程环节，上传运行代码</li>
+        <li>运行时的工作电流大于1000mA时可能无法正常工作</li>
+      </ol>
+      <div class="Carousel-container">
+        <div class="Carousel-item">
+          <input type="radio" name="carousel-omw8cj4" class="carousel-tab" checked="">
+          <img class="img" src="http://112.74.72.34:5003/static/markdown/dingding/Arduino/f9" alt="}" title="">
+          <img class="img-virtual" src="http://112.74.72.34:5003/static/markdown/dingding/Arduino/f9" alt="" title="">
+        </div>
+      </div>
+
+      <h4>说明</h4>
+      <ul>
+        <li>对于使用加密连接的mqtt服务器，需要满足如下条件才能连接</li>
+      </ul>
+      <ol>
+        <li>使用<code>WiFiClientSecure</code>类型而不是<code>WiFiClient</code></li>
+        <li>设置根证书</li>
+      </ol>
+      <ul>
+        <li>如果正确的进行了如上的配置还是无法连接，可能的原因及解决办法如下</li>
+      </ul>
+      <ol>
+        <li><a href="https://askemq.com/t/topic/3169/5"> 如果返回状态码-2，直接在连接中写入字符串 </a></li>
+        <li><a href="https://blog.csdn.net/qq_39592312/article/details/108931427"> 如果返回状态码2，设置用于支持连接的源文件
+          </a>，鼠标悬浮在引入的头文件上即可查看文件路径</li>
+        <li>参考<a href="https://docs.emqx.com/zh/cloud/latest/connect_to_deployments/esp32.html">官方文档</a>解决</li>
+      </ol>
+      <p>❤️将蓝牙扫描代码烧录入esp32后接通电源并放在蓝牙考勤机旁边，然后打开mqtt客户端查看上传的广播数据，将广播数据进行处理后替换蓝牙广播代码的广播数据，然后烧录程序打开钉钉即可实现打卡。❤️</p>
+      <h2>源代码</h2>
+      <ul class="mix-code-container">
+        <li class="mix-tab-item">
+          <input type="radio" class="mix-tab" name="tabs-7qr9c4g" id="tabs-7qr9c4g-tab0" checked="">
+          <label for="tabs-7qr9c4g-tab0">蓝牙广播（使用时卸载ArdunioBle）</label>
+          <div class="mix-code-content" id="tabs-7qr9c4g-content0">
+            <pre><code class="hljs language-cpp"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">"BLEDevice.h"</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">"BLEUtils.h"</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">"esp_sleep.h"</span></span><br><br>BLEAdvertising *pAdvertising;<br><br><span class="hljs-type">uint8_t</span> bleMac[<span class="hljs-number">6</span>] = {<span class="hljs-number">0xF8</span>, <span class="hljs-number">0xA7</span>, <span class="hljs-number">0x63</span>, <span class="hljs-number">0x9C</span>, <span class="hljs-number">0x69</span>, <span class="hljs-number">0x05</span>};
+    <span class="hljs-comment">// 0-30 前31组</span>
+    <span class="hljs-type">uint8_t</span> bleRaw[] = {
+      <span class="hljs-number">0x02</span>, <span class="hljs-number">0x01</span>, <span class="hljs-number">0x06</span>, <span class="hljs-number">0x03</span>, <span class="hljs-number">0x03</span>, <span class="hljs-number">0x3C</span>, <span class="hljs-number">0xFE</span>, <span class="hljs-number">0x17</span>, <span class="hljs-number">0xFF</span>, <span class="hljs-number">0x00</span>, <span class="hljs-number">0x02</span>, <span class="hljs-number">0x68</span>, <span class="hljs-number">0x00</span>, <span class="hljs-number">0x1F</span>, <span class="hljs-number">0x44</span>, <span class="hljs-number">0x3B</span>, <span class="hljs-number">0x0C</span>, <span class="hljs-number">0x52</span>, <span class="hljs-number">0x44</span>, <span class="hljs-number">0x34</span>, <span class="hljs-number">0x00</span>, <span class="hljs-number">0xC4</span>, <span class="hljs-number">0xF8</span>, <span class="hljs-number">0xA7</span>, <span class="hljs-number">0x63</span>, <span class="hljs-number">0x9E</span>, <span class="hljs-number">0xCC</span>, <span class="hljs-number">0x39</span>, <span class="hljs-number">0x00</span>, <span class="hljs-number">0x03</span>, <span class="hljs-number">0x20</span>, 
+    };
+    <span class="hljs-comment">// 如果复制出来的raw超过31组 那么把它改为true并维护下面的数组</span>
+    boolean rawMoreThan31 = <span class="hljs-literal">false</span>;
+    <span class="hljs-comment">// 31-end</span>
+    <span class="hljs-type">uint8_t</span> bleRaw32[] = {<span class="hljs-number">0x0C</span>,<span class="hljs-number">0x09</span>,<span class="hljs-number">0x52</span>,<span class="hljs-number">0x54</span>,<span class="hljs-number">0x4B</span>,<span class="hljs-number">0x5F</span>,<span class="hljs-number">0x42</span>,<span class="hljs-number">0x54</span>,<span class="hljs-number">0x5F</span>,<span class="hljs-number">0x34</span>,<span class="hljs-number">0x2E</span>,<span class="hljs-number">0x31</span>,<span class="hljs-number">0x00</span>};<br><br><span class="hljs-meta">#<span class="hljs-keyword">define</span> SERVICE_UUID <span class="hljs-string">"0000FE3C-0000-1000-8000-00805F9B34FB"</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">define</span> CHARACTERISTIC_ONE_UUID <span class="hljs-string">"0000FE1B-0000-1000-8000-00805F9B34FB"</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">define</span> CHARACTERISTIC_TWO_UUID <span class="hljs-string">"0000FE1C-0000-1000-8000-00805F9B34FB"</span></span><br><br><span class="hljs-comment">// 回调函数，用于处理特性通知</span>
+    <span class="hljs-keyword">class</span> <span class="hljs-title class_">MyCallbacks</span> : <span class="hljs-keyword">public</span> BLECharacteristicCallbacks {
+      <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">onRead</span><span class="hljs-params">(BLECharacteristic* pCharacteristic)</span> </span>{
+        std::string value = pCharacteristic-&gt;<span class="hljs-built_in">getValue</span>();
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Characteristic "</span>);
+        Serial.<span class="hljs-built_in">print</span>(pCharacteristic-&gt;<span class="hljs-built_in">getUUID</span>().<span class="hljs-built_in">toString</span>().<span class="hljs-built_in">c_str</span>());
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">" read: "</span>);
+        Serial.<span class="hljs-built_in">println</span>(value.<span class="hljs-built_in">c_str</span>());
+      }<br><br>  <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">onWrite</span><span class="hljs-params">(BLECharacteristic* pCharacteristic)</span> </span>{
+        std::string value = pCharacteristic-&gt;<span class="hljs-built_in">getValue</span>();
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Characteristic "</span>);
+        Serial.<span class="hljs-built_in">print</span>(pCharacteristic-&gt;<span class="hljs-built_in">getUUID</span>().<span class="hljs-built_in">toString</span>().<span class="hljs-built_in">c_str</span>());
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">" write: "</span>);
+        Serial.<span class="hljs-built_in">println</span>(value.<span class="hljs-built_in">c_str</span>());
+      }<br><br>  <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">onNotify</span><span class="hljs-params">(BLECharacteristic* pCharacteristic)</span> </span>{
+        std::string value = pCharacteristic-&gt;<span class="hljs-built_in">getValue</span>();
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Characteristic "</span>);
+        Serial.<span class="hljs-built_in">print</span>(pCharacteristic-&gt;<span class="hljs-built_in">getUUID</span>().<span class="hljs-built_in">toString</span>().<span class="hljs-built_in">c_str</span>());
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">" notify: "</span>);
+        Serial.<span class="hljs-built_in">println</span>(value.<span class="hljs-built_in">c_str</span>());
+      }
+    };<br><br><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">setup</span><span class="hljs-params">()</span> </span>{
+      Serial.<span class="hljs-built_in">begin</span>(<span class="hljs-number">115200</span>);
+      <span class="hljs-built_in">delay</span>(<span class="hljs-number">2000</span>);<br><br>  <span class="hljs-comment">// esp32没有提供设置蓝牙mac地址的api 通过查看esp32的源代码</span>
+      <span class="hljs-comment">// 此操作将根据蓝牙mac算出base mac</span>
+      <span class="hljs-keyword">if</span> (UNIVERSAL_MAC_ADDR_NUM == FOUR_UNIVERSAL_MAC_ADDR) {
+        bleMac[<span class="hljs-number">5</span>] -= <span class="hljs-number">2</span>;
+      } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (UNIVERSAL_MAC_ADDR_NUM == TWO_UNIVERSAL_MAC_ADDR) {
+        bleMac[<span class="hljs-number">5</span>] -= <span class="hljs-number">1</span>;
+      }
+      <span class="hljs-built_in">esp_base_mac_addr_set</span>(bleMac);<br><br>  <span class="hljs-comment">// 初始化</span>
+      BLEDevice::<span class="hljs-built_in">init</span>(<span class="hljs-string">""</span>);<br><br>  <span class="hljs-comment">// Create the BLE Server</span>
+      BLEServer *pServer = BLEDevice::<span class="hljs-built_in">createServer</span>(); <span class="hljs-comment">// &lt;-- no longer required to instantiate BLEServer, less flash and ram usage</span><br><br>  <span class="hljs-comment">// Create the BLE Service</span>
+      BLEService *pService = pServer-&gt;<span class="hljs-built_in">createService</span>(SERVICE_UUID);
+      <span class="hljs-comment">// Create a BLE Characteristic</span>
+      BLECharacteristic *pCharacteristic_one = pService-&gt;<span class="hljs-built_in">createCharacteristic</span>(
+                                              CHARACTERISTIC_ONE_UUID,
+                                              BLECharacteristic::PROPERTY_READ |
+                                              BLECharacteristic::PROPERTY_NOTIFY
+                                            );<br><br>  BLECharacteristic *pCharacteristic_two = pService-&gt;<span class="hljs-built_in">createCharacteristic</span>(
+                                              CHARACTERISTIC_TWO_UUID,
+                                              BLECharacteristic::PROPERTY_WRITE
+                                            );<br><br>  <span class="hljs-comment">// 设置回调函数</span>
+      pCharacteristic_two-&gt;<span class="hljs-built_in">setCallbacks</span>(<span class="hljs-keyword">new</span> <span class="hljs-built_in">MyCallbacks</span>());
+      pCharacteristic_one-&gt;<span class="hljs-built_in">setCallbacks</span>(<span class="hljs-keyword">new</span> <span class="hljs-built_in">MyCallbacks</span>());<br><br>  <span class="hljs-comment">// Start the service</span>
+      pService-&gt;<span class="hljs-built_in">start</span>();<br><br>  pAdvertising = pServer-&gt;<span class="hljs-built_in">getAdvertising</span>();<br><br>  <span class="hljs-comment">// 设备信息设置成空白的</span>
+      BLEAdvertisementData oScanResponseData = <span class="hljs-built_in">BLEAdvertisementData</span>();
+      pAdvertising-&gt;<span class="hljs-built_in">setScanResponseData</span>(oScanResponseData);<br><br>  <span class="hljs-comment">// 里面有个 m_customScanResponseData = true; 和 m_customScanResponseData = true; 所以只能先随便设置一下</span>
+      BLEAdvertisementData oAdvertisementData = <span class="hljs-built_in">BLEAdvertisementData</span>();
+      pAdvertising-&gt;<span class="hljs-built_in">setAdvertisementData</span>(oAdvertisementData);<br><br>  <span class="hljs-comment">// 简单粗暴直接底层api重新设置一下抓到的raw</span>
+      <span class="hljs-type">esp_err_t</span> errRc = ::<span class="hljs-built_in">esp_ble_gap_config_adv_data_raw</span>(bleRaw, <span class="hljs-number">31</span>);
+      <span class="hljs-keyword">if</span> (errRc != ESP_OK) {
+        Serial.<span class="hljs-built_in">printf</span>(<span class="hljs-string">"esp_ble_gap_config_adv_data_raw: %d\n"</span>, errRc);
+      }
+      <span class="hljs-comment">// 超过31</span>
+      <span class="hljs-keyword">if</span> (rawMoreThan31) {
+        errRc = ::<span class="hljs-built_in">esp_ble_gap_config_scan_rsp_data_raw</span>(bleRaw32, <span class="hljs-built_in">sizeof</span>(bleRaw32)/<span class="hljs-built_in">sizeof</span>(bleRaw32[<span class="hljs-number">0</span>]));
+        <span class="hljs-keyword">if</span> (errRc != ESP_OK) {
+          Serial.<span class="hljs-built_in">printf</span>(<span class="hljs-string">"esp_ble_gap_config_scan_rsp_data_raw: %d\n"</span>, errRc);
+        }
+      }<br><br>  pAdvertising-&gt;<span class="hljs-built_in">start</span>();
+    }<br><br><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">loop</span><span class="hljs-params">()</span> </span>{
+      <span class="hljs-comment">// 闪灯灯 至于为什么是串口输出，因为并没有内置led，但拥有串口指示灯</span>
+      Serial.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Sparkle"</span>);
+      <span class="hljs-built_in">delay</span>(<span class="hljs-number">1000</span>);
+      <span class="hljs-comment">// 20分钟去待机避免忘了关</span>
+      <span class="hljs-keyword">if</span> (<span class="hljs-built_in">millis</span>() &gt; <span class="hljs-number">1200000</span>) {
+        <span class="hljs-built_in">esp_deep_sleep_start</span>();
+      }
+    }
+    </code></pre>
+          </div>
+          <div class="mix-code-content-virtual" id="tabs-7qr9c4g-content0">
+            <pre><code class="hljs language-cpp"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">"BLEDevice.h"</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">"BLEUtils.h"</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">"esp_sleep.h"</span></span><br><br>BLEAdvertising *pAdvertising;<br><br><span class="hljs-type">uint8_t</span> bleMac[<span class="hljs-number">6</span>] = {<span class="hljs-number">0xF8</span>, <span class="hljs-number">0xA7</span>, <span class="hljs-number">0x63</span>, <span class="hljs-number">0x9C</span>, <span class="hljs-number">0x69</span>, <span class="hljs-number">0x05</span>};
+    <span class="hljs-comment">// 0-30 前31组</span>
+    <span class="hljs-type">uint8_t</span> bleRaw[] = {
+      <span class="hljs-number">0x02</span>, <span class="hljs-number">0x01</span>, <span class="hljs-number">0x06</span>, <span class="hljs-number">0x03</span>, <span class="hljs-number">0x03</span>, <span class="hljs-number">0x3C</span>, <span class="hljs-number">0xFE</span>, <span class="hljs-number">0x17</span>, <span class="hljs-number">0xFF</span>, <span class="hljs-number">0x00</span>, <span class="hljs-number">0x02</span>, <span class="hljs-number">0x68</span>, <span class="hljs-number">0x00</span>, <span class="hljs-number">0x1F</span>, <span class="hljs-number">0x44</span>, <span class="hljs-number">0x3B</span>, <span class="hljs-number">0x0C</span>, <span class="hljs-number">0x52</span>, <span class="hljs-number">0x44</span>, <span class="hljs-number">0x34</span>, <span class="hljs-number">0x00</span>, <span class="hljs-number">0xC4</span>, <span class="hljs-number">0xF8</span>, <span class="hljs-number">0xA7</span>, <span class="hljs-number">0x63</span>, <span class="hljs-number">0x9E</span>, <span class="hljs-number">0xCC</span>, <span class="hljs-number">0x39</span>, <span class="hljs-number">0x00</span>, <span class="hljs-number">0x03</span>, <span class="hljs-number">0x20</span>, 
+    };
+    <span class="hljs-comment">// 如果复制出来的raw超过31组 那么把它改为true并维护下面的数组</span>
+    boolean rawMoreThan31 = <span class="hljs-literal">false</span>;
+    <span class="hljs-comment">// 31-end</span>
+    <span class="hljs-type">uint8_t</span> bleRaw32[] = {<span class="hljs-number">0x0C</span>,<span class="hljs-number">0x09</span>,<span class="hljs-number">0x52</span>,<span class="hljs-number">0x54</span>,<span class="hljs-number">0x4B</span>,<span class="hljs-number">0x5F</span>,<span class="hljs-number">0x42</span>,<span class="hljs-number">0x54</span>,<span class="hljs-number">0x5F</span>,<span class="hljs-number">0x34</span>,<span class="hljs-number">0x2E</span>,<span class="hljs-number">0x31</span>,<span class="hljs-number">0x00</span>};<br><br><span class="hljs-meta">#<span class="hljs-keyword">define</span> SERVICE_UUID <span class="hljs-string">"0000FE3C-0000-1000-8000-00805F9B34FB"</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">define</span> CHARACTERISTIC_ONE_UUID <span class="hljs-string">"0000FE1B-0000-1000-8000-00805F9B34FB"</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">define</span> CHARACTERISTIC_TWO_UUID <span class="hljs-string">"0000FE1C-0000-1000-8000-00805F9B34FB"</span></span><br><br><span class="hljs-comment">// 回调函数，用于处理特性通知</span>
+    <span class="hljs-keyword">class</span> <span class="hljs-title class_">MyCallbacks</span> : <span class="hljs-keyword">public</span> BLECharacteristicCallbacks {
+      <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">onRead</span><span class="hljs-params">(BLECharacteristic* pCharacteristic)</span> </span>{
+        std::string value = pCharacteristic-&gt;<span class="hljs-built_in">getValue</span>();
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Characteristic "</span>);
+        Serial.<span class="hljs-built_in">print</span>(pCharacteristic-&gt;<span class="hljs-built_in">getUUID</span>().<span class="hljs-built_in">toString</span>().<span class="hljs-built_in">c_str</span>());
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">" read: "</span>);
+        Serial.<span class="hljs-built_in">println</span>(value.<span class="hljs-built_in">c_str</span>());
+      }<br><br>  <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">onWrite</span><span class="hljs-params">(BLECharacteristic* pCharacteristic)</span> </span>{
+        std::string value = pCharacteristic-&gt;<span class="hljs-built_in">getValue</span>();
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Characteristic "</span>);
+        Serial.<span class="hljs-built_in">print</span>(pCharacteristic-&gt;<span class="hljs-built_in">getUUID</span>().<span class="hljs-built_in">toString</span>().<span class="hljs-built_in">c_str</span>());
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">" write: "</span>);
+        Serial.<span class="hljs-built_in">println</span>(value.<span class="hljs-built_in">c_str</span>());
+      }<br><br>  <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">onNotify</span><span class="hljs-params">(BLECharacteristic* pCharacteristic)</span> </span>{
+        std::string value = pCharacteristic-&gt;<span class="hljs-built_in">getValue</span>();
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Characteristic "</span>);
+        Serial.<span class="hljs-built_in">print</span>(pCharacteristic-&gt;<span class="hljs-built_in">getUUID</span>().<span class="hljs-built_in">toString</span>().<span class="hljs-built_in">c_str</span>());
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">" notify: "</span>);
+        Serial.<span class="hljs-built_in">println</span>(value.<span class="hljs-built_in">c_str</span>());
+      }
+    };<br><br><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">setup</span><span class="hljs-params">()</span> </span>{
+      Serial.<span class="hljs-built_in">begin</span>(<span class="hljs-number">115200</span>);
+      <span class="hljs-built_in">delay</span>(<span class="hljs-number">2000</span>);<br><br>  <span class="hljs-comment">// esp32没有提供设置蓝牙mac地址的api 通过查看esp32的源代码</span>
+      <span class="hljs-comment">// 此操作将根据蓝牙mac算出base mac</span>
+      <span class="hljs-keyword">if</span> (UNIVERSAL_MAC_ADDR_NUM == FOUR_UNIVERSAL_MAC_ADDR) {
+        bleMac[<span class="hljs-number">5</span>] -= <span class="hljs-number">2</span>;
+      } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (UNIVERSAL_MAC_ADDR_NUM == TWO_UNIVERSAL_MAC_ADDR) {
+        bleMac[<span class="hljs-number">5</span>] -= <span class="hljs-number">1</span>;
+      }
+      <span class="hljs-built_in">esp_base_mac_addr_set</span>(bleMac);<br><br>  <span class="hljs-comment">// 初始化</span>
+      BLEDevice::<span class="hljs-built_in">init</span>(<span class="hljs-string">""</span>);<br><br>  <span class="hljs-comment">// Create the BLE Server</span>
+      BLEServer *pServer = BLEDevice::<span class="hljs-built_in">createServer</span>(); <span class="hljs-comment">// &lt;-- no longer required to instantiate BLEServer, less flash and ram usage</span><br><br>  <span class="hljs-comment">// Create the BLE Service</span>
+      BLEService *pService = pServer-&gt;<span class="hljs-built_in">createService</span>(SERVICE_UUID);
+      <span class="hljs-comment">// Create a BLE Characteristic</span>
+      BLECharacteristic *pCharacteristic_one = pService-&gt;<span class="hljs-built_in">createCharacteristic</span>(
+                                              CHARACTERISTIC_ONE_UUID,
+                                              BLECharacteristic::PROPERTY_READ |
+                                              BLECharacteristic::PROPERTY_NOTIFY
+                                            );<br><br>  BLECharacteristic *pCharacteristic_two = pService-&gt;<span class="hljs-built_in">createCharacteristic</span>(
+                                              CHARACTERISTIC_TWO_UUID,
+                                              BLECharacteristic::PROPERTY_WRITE
+                                            );<br><br>  <span class="hljs-comment">// 设置回调函数</span>
+      pCharacteristic_two-&gt;<span class="hljs-built_in">setCallbacks</span>(<span class="hljs-keyword">new</span> <span class="hljs-built_in">MyCallbacks</span>());
+      pCharacteristic_one-&gt;<span class="hljs-built_in">setCallbacks</span>(<span class="hljs-keyword">new</span> <span class="hljs-built_in">MyCallbacks</span>());<br><br>  <span class="hljs-comment">// Start the service</span>
+      pService-&gt;<span class="hljs-built_in">start</span>();<br><br>  pAdvertising = pServer-&gt;<span class="hljs-built_in">getAdvertising</span>();<br><br>  <span class="hljs-comment">// 设备信息设置成空白的</span>
+      BLEAdvertisementData oScanResponseData = <span class="hljs-built_in">BLEAdvertisementData</span>();
+      pAdvertising-&gt;<span class="hljs-built_in">setScanResponseData</span>(oScanResponseData);<br><br>  <span class="hljs-comment">// 里面有个 m_customScanResponseData = true; 和 m_customScanResponseData = true; 所以只能先随便设置一下</span>
+      BLEAdvertisementData oAdvertisementData = <span class="hljs-built_in">BLEAdvertisementData</span>();
+      pAdvertising-&gt;<span class="hljs-built_in">setAdvertisementData</span>(oAdvertisementData);<br><br>  <span class="hljs-comment">// 简单粗暴直接底层api重新设置一下抓到的raw</span>
+      <span class="hljs-type">esp_err_t</span> errRc = ::<span class="hljs-built_in">esp_ble_gap_config_adv_data_raw</span>(bleRaw, <span class="hljs-number">31</span>);
+      <span class="hljs-keyword">if</span> (errRc != ESP_OK) {
+        Serial.<span class="hljs-built_in">printf</span>(<span class="hljs-string">"esp_ble_gap_config_adv_data_raw: %d\n"</span>, errRc);
+      }
+      <span class="hljs-comment">// 超过31</span>
+      <span class="hljs-keyword">if</span> (rawMoreThan31) {
+        errRc = ::<span class="hljs-built_in">esp_ble_gap_config_scan_rsp_data_raw</span>(bleRaw32, <span class="hljs-built_in">sizeof</span>(bleRaw32)/<span class="hljs-built_in">sizeof</span>(bleRaw32[<span class="hljs-number">0</span>]));
+        <span class="hljs-keyword">if</span> (errRc != ESP_OK) {
+          Serial.<span class="hljs-built_in">printf</span>(<span class="hljs-string">"esp_ble_gap_config_scan_rsp_data_raw: %d\n"</span>, errRc);
+        }
+      }<br><br>  pAdvertising-&gt;<span class="hljs-built_in">start</span>();
+    }<br><br><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">loop</span><span class="hljs-params">()</span> </span>{
+      <span class="hljs-comment">// 闪灯灯 至于为什么是串口输出，因为并没有内置led，但拥有串口指示灯</span>
+      Serial.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Sparkle"</span>);
+      <span class="hljs-built_in">delay</span>(<span class="hljs-number">1000</span>);
+      <span class="hljs-comment">// 20分钟去待机避免忘了关</span>
+      <span class="hljs-keyword">if</span> (<span class="hljs-built_in">millis</span>() &gt; <span class="hljs-number">1200000</span>) {
+        <span class="hljs-built_in">esp_deep_sleep_start</span>();
+      }
+    }
+    </code></pre>
+          </div>
+        </li>
+        <li class="mix-tab-item">
+          <input type="radio" class="mix-tab" name="tabs-7qr9c4g" id="tabs-7qr9c4g-tab1">
+          <label for="tabs-7qr9c4g-tab1">蓝牙扫描</label>
+          <div class="mix-code-content" id="tabs-7qr9c4g-content1">
+            <pre><code class="hljs language-cpp"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;WiFi.h&gt;</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;ArduinoBLE.h&gt;</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;PubSubClient.h&gt;</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;WiFiClientSecure.h&gt;</span></span><br><br><span class="hljs-comment">// WiFi credentials</span>
+    <span class="hljs-type">const</span> <span class="hljs-type">char</span> *ssid = <span class="hljs-string">"xxxxxx"</span>;         <span class="hljs-comment">// 替换为你的WiFi热点名，不要使用中文</span>
+    <span class="hljs-type">const</span> <span class="hljs-type">char</span> *password = <span class="hljs-string">"12345678"</span>;  <span class="hljs-comment">// 替换为你的Wifi密码</span><br><br><span class="hljs-comment">// 指定的蓝牙MAC地址</span>
+    <span class="hljs-type">const</span> <span class="hljs-type">char</span> *targetMACAddress = <span class="hljs-string">"11:22:33:44:55:66"</span>; <span class="hljs-comment">// 替换为考勤机的mac地址</span><br><br><span class="hljs-comment">// MQTT Broker settings</span>
+    <span class="hljs-type">const</span> <span class="hljs-type">char</span> *mqtt_broker = <span class="hljs-string">"test.mosquitto.org"</span>; <span class="hljs-comment">// （可选）替换为你的broker地址</span>
+    <span class="hljs-comment">// const char *mqtt_username = "skysilksock"; // 替换为你设置的用户名</span>
+    <span class="hljs-comment">// const char *mqtt_password = "2680613764fwy"; // 替换为你设置的密码</span>
+    <span class="hljs-type">const</span> <span class="hljs-type">int</span> mqtt_port = <span class="hljs-number">1883</span>; <span class="hljs-comment">// 端口号设置，如果使用自己的服务器则设置为8883</span><br><br><span class="hljs-comment">// WiFi and MQTT client initialization</span>
+    WiFiClient esp_client;
+    <span class="hljs-comment">// WiFiClientSecure esp_client; // 如果使用自己的服务器则使用WiFiClientSecure，注释上行</span>
+    <span class="hljs-function">PubSubClient <span class="hljs-title">mqtt_client</span><span class="hljs-params">(esp_client)</span></span>;<br><br><span class="hljs-type">char</span> *mqtt_topic = <span class="hljs-string">"dingding"</span>;
+    <span class="hljs-comment">// 定义 MQTT 主题</span>
+    String topic_commands = <span class="hljs-built_in">String</span>(mqtt_topic) + <span class="hljs-string">"/commands"</span>;
+    String topic_status = <span class="hljs-built_in">String</span>(mqtt_topic) + <span class="hljs-string">"/status"</span>;
+    String topic_advertisementData = <span class="hljs-built_in">String</span>(mqtt_topic) + <span class="hljs-string">"/advData"</span>;
+    String topic_connect = <span class="hljs-built_in">String</span>(mqtt_topic) + <span class="hljs-string">"/connect"</span>;<br><br><span class="hljs-comment">// Root CA Certificate</span>
+    <span class="hljs-comment">// Load DigiCert Global Root G2, which is used by EMQX Public Broker: broker.emqx.io</span>
+    <span class="hljs-comment">// const char *ca_cert = R"EOF(</span>
+    <span class="hljs-comment">// -----BEGIN CERTIFICATE-----</span>
+    <span class="hljs-comment">// MIIDjjCCAnagAwIBAgIQAzrx5qcRqaC7KGSxHQn65TANBgkqhkiG9w0BAQsFADBh</span>
+    <span class="hljs-comment">// MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3</span>
+    <span class="hljs-comment">// d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBH</span>
+    <span class="hljs-comment">// MjAeFw0xMzA4MDExMjAwMDBaFw0zODAxMTUxMjAwMDBaMGExCzAJBgNVBAYTAlVT</span>
+    <span class="hljs-comment">// MRUwEwYDVQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5j</span>
+    <span class="hljs-comment">// b20xIDAeBgNVBAMTF0RpZ2lDZXJ0IEdsb2JhbCBSb290IEcyMIIBIjANBgkqhkiG</span>
+    <span class="hljs-comment">// 9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuzfNNNx7a8myaJCtSnX/RrohCgiN9RlUyfuI</span>
+    <span class="hljs-comment">// 2/Ou8jqJkTx65qsGGmvPrC3oXgkkRLpimn7Wo6h+4FR1IAWsULecYxpsMNzaHxmx</span>
+    <span class="hljs-comment">// 1x7e/dfgy5SDN67sH0NO3Xss0r0upS/kqbitOtSZpLYl6ZtrAGCSYP9PIUkY92eQ</span>
+    <span class="hljs-comment">// q2EGnI/yuum06ZIya7XzV+hdG82MHauVBJVJ8zUtluNJbd134/tJS7SsVQepj5Wz</span>
+    <span class="hljs-comment">// tCO7TG1F8PapspUwtP1MVYwnSlcUfIKdzXOS0xZKBgyMUNGPHgm+F6HmIcr9g+UQ</span>
+    <span class="hljs-comment">// vIOlCsRnKPZzFBQ9RnbDhxSJITRNrw9FDKZJobq7nMWxM4MphQIDAQABo0IwQDAP</span>
+    <span class="hljs-comment">// BgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIBhjAdBgNVHQ4EFgQUTiJUIBiV</span>
+    <span class="hljs-comment">// 5uNu5g/6+rkS7QYXjzkwDQYJKoZIhvcNAQELBQADggEBAGBnKJRvDkhj6zHd6mcY</span>
+    <span class="hljs-comment">// 1Yl9PMWLSn/pvtsrF9+wX3N3KjITOYFnQoQj8kVnNeyIv/iPsGEMNKSuIEyExtv4</span>
+    <span class="hljs-comment">// NeF22d+mQrvHRAiGfzZ0JFrabA0UWTW98kndth/Jsw1HKj2ZL7tcu7XUIOGZX1NG</span>
+    <span class="hljs-comment">// Fdtom/DzMNU+MeKNhJ7jitralj41E6Vf8PlwUHBHQRFXGU7Aj64GxJUTFy8bJZ91</span>
+    <span class="hljs-comment">// 8rGOmaFvE7FBcf6IKshPECBV1/MUReXgRPTqh5Uykw7+U0b6LJ3/iyK5S9kJRaTe</span>
+    <span class="hljs-comment">// pLiaWN0bfVKfjllDiIGknibVb63dDcY3fe0Dkhvld1927jyNxF1WW6LZZm6zNTfl</span>
+    <span class="hljs-comment">// MrY=</span>
+    <span class="hljs-comment">// -----END CERTIFICATE-----</span>
+    <span class="hljs-comment">// )EOF";</span><br><br><span class="hljs-comment">// Load DigiCert Global Root CA ca_cert, which is used by EMQX Platform Serverless Deployment</span>
+    <span class="hljs-type">const</span> <span class="hljs-type">char</span> *ca_cert = <span class="hljs-string">R"EOF(
+    -----BEGIN CERTIFICATE-----
+    MIIDrzCCApegAwIBAgIQCDvgVpBCRrGhdWrJWZHHSjANBgkqhkiG9w0BAQUFADBh
+    MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3
+    d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBD
+    QTAeFw0wNjExMTAwMDAwMDBaFw0zMTExMTAwMDAwMDBaMGExCzAJBgNVBAYTAlVT
+    MRUwEwYDVQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5j
+    b20xIDAeBgNVBAMTF0RpZ2lDZXJ0IEdsb2JhbCBSb290IENBMIIBIjANBgkqhkiG
+    9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4jvhEXLeqKTTo1eqUKKPC3eQyaKl7hLOllsB
+    CSDMAZOnTjC3U/dDxGkAV53ijSLdhwZAAIEJzs4bg7/fzTtxRuLWZscFs3YnFo97
+    nh6Vfe63SKMI2tavegw5BmV/Sl0fvBf4q77uKNd0f3p4mVmFaG5cIzJLv07A6Fpt
+    43C/dxC//AH2hdmoRBBYMql1GNXRor5H4idq9Joz+EkIYIvUX7Q6hL+hqkpMfT7P
+    T19sdl6gSzeRntwi5m3OFBqOasv+zbMUZBfHWymeMr/y7vrTC0LUq7dBMtoM1O/4
+    gdW7jVg/tRvoSSiicNoxBN33shbyTApOB6jtSj1etX+jkMOvJwIDAQABo2MwYTAO
+    BgNVHQ8BAf8EBAMCAYYwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUA95QNVbR
+    TLtm8KPiGxvDl7I90VUwHwYDVR0jBBgwFoAUA95QNVbRTLtm8KPiGxvDl7I90VUw
+    DQYJKoZIhvcNAQEFBQADggEBAMucN6pIExIK+t1EnE9SsPTfrgT1eXkIoyQY/Esr
+    hMAtudXH/vTBH1jLuG2cenTnmCmrEbXjcKChzUyImZOMkXDiqw8cvpOp/2PV5Adg
+    06O/nVsJ8dWO41P0jmP6P6fbtGbfYmbW0W5BjfIttep3Sp+dWOIrWcBAI+0tKIJF
+    PnlUkiaY4IBIqDfv8NZ5YBberOgOzW6sRBc4L0na4UU+Krk2U886UAb3LujEV0ls
+    YSEY1QSteDwsOoBrp+uvFRTp2InBuThs4pFsiv9kuXclVzDAGySj4dzp30d8tbQk
+    CAUw7C29C79Fv1C5qfPrmAESrciIxpg0X40KPMbp1ZWVbd4=
+    -----END CERTIFICATE-----
+    )EOF"</span>;<br><br><span class="hljs-comment">// Function Declarations</span>
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">connectToWiFi</span><span class="hljs-params">()</span></span>;<br><br><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">connectToMQTT</span><span class="hljs-params">()</span></span>;<br><br><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">mqttCallback</span><span class="hljs-params">(<span class="hljs-type">char</span> *topic, byte *payload, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> length)</span></span>;<br><br><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">setup</span><span class="hljs-params">()</span> </span>{
+      Serial.<span class="hljs-built_in">begin</span>(<span class="hljs-number">115200</span>);  <span class="hljs-comment">// 初始化串口</span>
+      <span class="hljs-built_in">connectToWiFi</span>();<br><br>  <span class="hljs-comment">// 初始化蓝牙</span>
+      <span class="hljs-keyword">if</span> (!BLE.<span class="hljs-built_in">begin</span>()) {
+        Serial.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Starting BLE failed!"</span>);
+        <span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>)
+          ;
+      }<br><br>  <span class="hljs-comment">// 设置根证书</span>
+      <span class="hljs-comment">// esp_client.setCACert(ca_cert); // 如果使用自己的服务器需要设置根证书</span><br><br>  mqtt_client.<span class="hljs-built_in">setServer</span>(mqtt_broker, mqtt_port);  <span class="hljs-comment">// 设置mqtt服务</span>
+      mqtt_client.<span class="hljs-built_in">setKeepAlive</span>(<span class="hljs-number">60</span>);
+      mqtt_client.<span class="hljs-built_in">setCallback</span>(mqttCallback);  <span class="hljs-comment">// 设置回调函数</span>
+      <span class="hljs-built_in">connectToMQTT</span>();
+    }<br><br><span class="hljs-comment">// 用于连接WiFi的函数</span>
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">connectToWiFi</span><span class="hljs-params">()</span> </span>{
+      WiFi.<span class="hljs-built_in">begin</span>(ssid, password);
+      Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Connecting to WiFi"</span>);
+      <span class="hljs-keyword">while</span> (WiFi.<span class="hljs-built_in">status</span>() != WL_CONNECTED) {
+        <span class="hljs-built_in">delay</span>(<span class="hljs-number">500</span>);
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"."</span>);
+      }
+      Serial.<span class="hljs-built_in">println</span>(<span class="hljs-string">"\nConnected to WiFi"</span>);
+    }<br><br><span class="hljs-comment">// 用于连接MQTT服务的函数</span>
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">connectToMQTT</span><span class="hljs-params">()</span> </span>{
+      <span class="hljs-keyword">while</span> (!mqtt_client.<span class="hljs-built_in">connected</span>()) {
+        String client_id = <span class="hljs-string">"esp32-client-"</span> + <span class="hljs-built_in">String</span>(WiFi.<span class="hljs-built_in">macAddress</span>());
+        Serial.<span class="hljs-built_in">printf</span>(<span class="hljs-string">"Connecting to MQTT Broker as %s...\n"</span>, client_id.<span class="hljs-built_in">c_str</span>());
+        <span class="hljs-keyword">if</span> (mqtt_client.<span class="hljs-built_in">connect</span>(client_id.<span class="hljs-built_in">c_str</span>())) {
+    <span class="hljs-comment">//  if (mqtt_client.connect(client_id.c_str(), mqtt_username, mqtt_password)) // 使用自己的服务器需要传入账户密码参数</span>
+          Serial.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Connected to MQTT broker"</span>);
+          mqtt_client.<span class="hljs-built_in">subscribe</span>(topic_commands.<span class="hljs-built_in">c_str</span>());
+          mqtt_client.<span class="hljs-built_in">publish</span>(topic_status.<span class="hljs-built_in">c_str</span>(), <span class="hljs-string">"Hi EMQX I'm ESP32 ^^"</span>);  <span class="hljs-comment">// Publish message upon connection</span>
+        } <span class="hljs-keyword">else</span> {
+          Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Failed to connect to MQTT broker, rc="</span>);
+          Serial.<span class="hljs-built_in">print</span>(mqtt_client.<span class="hljs-built_in">state</span>());
+          Serial.<span class="hljs-built_in">println</span>(<span class="hljs-string">" Retrying in 5 seconds."</span>);
+          <span class="hljs-built_in">delay</span>(<span class="hljs-number">5000</span>);
+        }
+      }
+    }<br><br><span class="hljs-comment">// 该函数指示了如果收到来自mqtt服务器的消息该如何操作</span>
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">mqttCallback</span><span class="hljs-params">(<span class="hljs-type">char</span> *topic, byte *payload, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> length)</span> </span>{
+      Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Message received on topic: "</span>);
+      Serial.<span class="hljs-built_in">println</span>(topic);
+      Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Message: "</span>);
+      <span class="hljs-keyword">for</span> (<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; length; i++) {
+        Serial.<span class="hljs-built_in">print</span>((<span class="hljs-type">char</span>)payload[i]);
+      }
+      Serial.<span class="hljs-built_in">println</span>(<span class="hljs-string">"\n-----------------------"</span>);
+      mqtt_client.<span class="hljs-built_in">publish</span>(topic_connect.<span class="hljs-built_in">c_str</span>(), <span class="hljs-string">"Hi EMQX I'm ESP32 ^^"</span>);
+    }<br><br><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">loop</span><span class="hljs-params">()</span> </span>{
+      <span class="hljs-comment">// 如果断开与服务器的连接则尝试重连</span>
+      <span class="hljs-keyword">if</span> (!mqtt_client.<span class="hljs-built_in">connected</span>()) {
+        <span class="hljs-built_in">connectToMQTT</span>();
+      }
+      mqtt_client.<span class="hljs-built_in">loop</span>();  <span class="hljs-comment">// 类似app.run()</span><br><br>  <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> lastMsg = <span class="hljs-built_in">millis</span>(); <span class="hljs-comment">// 当前时间</span><br><br>  BLE.<span class="hljs-built_in">scan</span>();  <span class="hljs-comment">// 开启蓝牙扫描</span>
+      Serial.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Scanning for BLE devices..."</span>);<br><br>  <span class="hljs-comment">// 持续扫描20秒，试图找到对应mac地址的广播数据</span>
+      <span class="hljs-keyword">while</span> (<span class="hljs-built_in">millis</span>() - lastMsg &lt; <span class="hljs-number">20</span> * <span class="hljs-number">1000</span>) {
+        <span class="hljs-comment">// delay(1000); // 每次得出结果后等待1秒</span>
+        String s = <span class="hljs-built_in">getAdvertisementData</span>(targetMACAddress);
+        <span class="hljs-keyword">if</span> (s.<span class="hljs-built_in">length</span>()) {
+          Serial.<span class="hljs-built_in">println</span>(<span class="hljs-string">"hello"</span>);
+          mqtt_client.<span class="hljs-built_in">publish</span>(topic_advertisementData.<span class="hljs-built_in">c_str</span>(), s.<span class="hljs-built_in">c_str</span>());
+        }
+      }<br><br>  BLE.<span class="hljs-built_in">stopScan</span>(); <span class="hljs-comment">// 结束蓝牙扫描</span><br><br>  <span class="hljs-comment">// 扫描结束后更新消息，用于判断是否有连接</span>
+      String msg = <span class="hljs-string">"Hello from ESP32"</span> + <span class="hljs-built_in">String</span>(lastMsg);
+      Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Publish message: "</span>);
+      Serial.<span class="hljs-built_in">println</span>(msg);
+      mqtt_client.<span class="hljs-built_in">publish</span>(topic_status.<span class="hljs-built_in">c_str</span>(), msg.<span class="hljs-built_in">c_str</span>());<br><br>  <span class="hljs-built_in">delay</span>(<span class="hljs-number">10</span> * <span class="hljs-number">1000</span>); <span class="hljs-comment">// 每次扫描结束后等待10秒再进行扫描</span>
+    }<br><br><span class="hljs-comment">// 获取蓝牙设备并判断是否是指定设备，如果是则返回其广播数据，未扫描到设备则返回空字符串</span>
+    <span class="hljs-function">String <span class="hljs-title">getAdvertisementData</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">char</span> *targetMACAddress)</span> </span>{
+      <span class="hljs-comment">// 获取扫描结果</span>
+      BLEDevice peripheral = BLE.<span class="hljs-built_in">available</span>();
+      <span class="hljs-keyword">if</span> (peripheral) {
+        <span class="hljs-comment">// 打印设备地址</span>
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Found device: "</span>);
+        Serial.<span class="hljs-built_in">println</span>(peripheral.<span class="hljs-built_in">address</span>());<br><br>    <span class="hljs-comment">// 检查是否是指定的MAC地址</span>
+        <span class="hljs-keyword">if</span> (peripheral.<span class="hljs-built_in">address</span>() == targetMACAddress) {
+          Serial.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Target device found!"</span>);<br><br>      <span class="hljs-comment">// 获取广播数据</span>
+          <span class="hljs-type">int</span> len = peripheral.<span class="hljs-built_in">advertisementDataLength</span>();
+          <span class="hljs-keyword">if</span> (len &gt; <span class="hljs-number">0</span>) {
+            byte advData[len];
+            peripheral.<span class="hljs-built_in">advertisementData</span>(advData, len);<br><br>        <span class="hljs-comment">// 创建 String 用于记录广播数据</span>
+            String advDataStr = <span class="hljs-string">""</span>;<br><br>        <span class="hljs-comment">// 将 byte 数组数据复制到String</span>
+            <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; len; i++) {
+              <span class="hljs-type">char</span> hex[<span class="hljs-number">3</span>];  <span class="hljs-comment">// 两位十六进制数加上终止符</span>
+              <span class="hljs-built_in">sprintf</span>(hex, <span class="hljs-string">"%02X"</span>, advData[i]);
+              advDataStr += hex;
+            }<br><br>        <span class="hljs-keyword">return</span> advDataStr;
+          }
+        }
+        <span class="hljs-keyword">return</span> <span class="hljs-string">""</span>;
+      }
+      <span class="hljs-keyword">return</span> <span class="hljs-string">""</span>;
+    }
+    </code></pre>
+          </div>
+          <div class="mix-code-content-virtual" id="tabs-7qr9c4g-content1">
+            <pre><code class="hljs language-cpp"><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;WiFi.h&gt;</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;ArduinoBLE.h&gt;</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;PubSubClient.h&gt;</span></span>
+    <span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;WiFiClientSecure.h&gt;</span></span><br><br><span class="hljs-comment">// WiFi credentials</span>
+    <span class="hljs-type">const</span> <span class="hljs-type">char</span> *ssid = <span class="hljs-string">"xxxxxx"</span>;         <span class="hljs-comment">// 替换为你的WiFi热点名，不要使用中文</span>
+    <span class="hljs-type">const</span> <span class="hljs-type">char</span> *password = <span class="hljs-string">"12345678"</span>;  <span class="hljs-comment">// 替换为你的Wifi密码</span><br><br><span class="hljs-comment">// 指定的蓝牙MAC地址</span>
+    <span class="hljs-type">const</span> <span class="hljs-type">char</span> *targetMACAddress = <span class="hljs-string">"11:22:33:44:55:66"</span>; <span class="hljs-comment">// 替换为考勤机的mac地址</span><br><br><span class="hljs-comment">// MQTT Broker settings</span>
+    <span class="hljs-type">const</span> <span class="hljs-type">char</span> *mqtt_broker = <span class="hljs-string">"test.mosquitto.org"</span>; <span class="hljs-comment">// （可选）替换为你的broker地址</span>
+    <span class="hljs-comment">// const char *mqtt_username = "skysilksock"; // 替换为你设置的用户名</span>
+    <span class="hljs-comment">// const char *mqtt_password = "2680613764fwy"; // 替换为你设置的密码</span>
+    <span class="hljs-type">const</span> <span class="hljs-type">int</span> mqtt_port = <span class="hljs-number">1883</span>; <span class="hljs-comment">// 端口号设置，如果使用自己的服务器则设置为8883</span><br><br><span class="hljs-comment">// WiFi and MQTT client initialization</span>
+    WiFiClient esp_client;
+    <span class="hljs-comment">// WiFiClientSecure esp_client; // 如果使用自己的服务器则使用WiFiClientSecure，注释上行</span>
+    <span class="hljs-function">PubSubClient <span class="hljs-title">mqtt_client</span><span class="hljs-params">(esp_client)</span></span>;<br><br><span class="hljs-type">char</span> *mqtt_topic = <span class="hljs-string">"dingding"</span>;
+    <span class="hljs-comment">// 定义 MQTT 主题</span>
+    String topic_commands = <span class="hljs-built_in">String</span>(mqtt_topic) + <span class="hljs-string">"/commands"</span>;
+    String topic_status = <span class="hljs-built_in">String</span>(mqtt_topic) + <span class="hljs-string">"/status"</span>;
+    String topic_advertisementData = <span class="hljs-built_in">String</span>(mqtt_topic) + <span class="hljs-string">"/advData"</span>;
+    String topic_connect = <span class="hljs-built_in">String</span>(mqtt_topic) + <span class="hljs-string">"/connect"</span>;<br><br><span class="hljs-comment">// Root CA Certificate</span>
+    <span class="hljs-comment">// Load DigiCert Global Root G2, which is used by EMQX Public Broker: broker.emqx.io</span>
+    <span class="hljs-comment">// const char *ca_cert = R"EOF(</span>
+    <span class="hljs-comment">// -----BEGIN CERTIFICATE-----</span>
+    <span class="hljs-comment">// MIIDjjCCAnagAwIBAgIQAzrx5qcRqaC7KGSxHQn65TANBgkqhkiG9w0BAQsFADBh</span>
+    <span class="hljs-comment">// MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3</span>
+    <span class="hljs-comment">// d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBH</span>
+    <span class="hljs-comment">// MjAeFw0xMzA4MDExMjAwMDBaFw0zODAxMTUxMjAwMDBaMGExCzAJBgNVBAYTAlVT</span>
+    <span class="hljs-comment">// MRUwEwYDVQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5j</span>
+    <span class="hljs-comment">// b20xIDAeBgNVBAMTF0RpZ2lDZXJ0IEdsb2JhbCBSb290IEcyMIIBIjANBgkqhkiG</span>
+    <span class="hljs-comment">// 9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuzfNNNx7a8myaJCtSnX/RrohCgiN9RlUyfuI</span>
+    <span class="hljs-comment">// 2/Ou8jqJkTx65qsGGmvPrC3oXgkkRLpimn7Wo6h+4FR1IAWsULecYxpsMNzaHxmx</span>
+    <span class="hljs-comment">// 1x7e/dfgy5SDN67sH0NO3Xss0r0upS/kqbitOtSZpLYl6ZtrAGCSYP9PIUkY92eQ</span>
+    <span class="hljs-comment">// q2EGnI/yuum06ZIya7XzV+hdG82MHauVBJVJ8zUtluNJbd134/tJS7SsVQepj5Wz</span>
+    <span class="hljs-comment">// tCO7TG1F8PapspUwtP1MVYwnSlcUfIKdzXOS0xZKBgyMUNGPHgm+F6HmIcr9g+UQ</span>
+    <span class="hljs-comment">// vIOlCsRnKPZzFBQ9RnbDhxSJITRNrw9FDKZJobq7nMWxM4MphQIDAQABo0IwQDAP</span>
+    <span class="hljs-comment">// BgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIBhjAdBgNVHQ4EFgQUTiJUIBiV</span>
+    <span class="hljs-comment">// 5uNu5g/6+rkS7QYXjzkwDQYJKoZIhvcNAQELBQADggEBAGBnKJRvDkhj6zHd6mcY</span>
+    <span class="hljs-comment">// 1Yl9PMWLSn/pvtsrF9+wX3N3KjITOYFnQoQj8kVnNeyIv/iPsGEMNKSuIEyExtv4</span>
+    <span class="hljs-comment">// NeF22d+mQrvHRAiGfzZ0JFrabA0UWTW98kndth/Jsw1HKj2ZL7tcu7XUIOGZX1NG</span>
+    <span class="hljs-comment">// Fdtom/DzMNU+MeKNhJ7jitralj41E6Vf8PlwUHBHQRFXGU7Aj64GxJUTFy8bJZ91</span>
+    <span class="hljs-comment">// 8rGOmaFvE7FBcf6IKshPECBV1/MUReXgRPTqh5Uykw7+U0b6LJ3/iyK5S9kJRaTe</span>
+    <span class="hljs-comment">// pLiaWN0bfVKfjllDiIGknibVb63dDcY3fe0Dkhvld1927jyNxF1WW6LZZm6zNTfl</span>
+    <span class="hljs-comment">// MrY=</span>
+    <span class="hljs-comment">// -----END CERTIFICATE-----</span>
+    <span class="hljs-comment">// )EOF";</span><br><br><span class="hljs-comment">// Load DigiCert Global Root CA ca_cert, which is used by EMQX Platform Serverless Deployment</span>
+    <span class="hljs-type">const</span> <span class="hljs-type">char</span> *ca_cert = <span class="hljs-string">R"EOF(
+    -----BEGIN CERTIFICATE-----
+    MIIDrzCCApegAwIBAgIQCDvgVpBCRrGhdWrJWZHHSjANBgkqhkiG9w0BAQUFADBh
+    MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3
+    d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBD
+    QTAeFw0wNjExMTAwMDAwMDBaFw0zMTExMTAwMDAwMDBaMGExCzAJBgNVBAYTAlVT
+    MRUwEwYDVQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5j
+    b20xIDAeBgNVBAMTF0RpZ2lDZXJ0IEdsb2JhbCBSb290IENBMIIBIjANBgkqhkiG
+    9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4jvhEXLeqKTTo1eqUKKPC3eQyaKl7hLOllsB
+    CSDMAZOnTjC3U/dDxGkAV53ijSLdhwZAAIEJzs4bg7/fzTtxRuLWZscFs3YnFo97
+    nh6Vfe63SKMI2tavegw5BmV/Sl0fvBf4q77uKNd0f3p4mVmFaG5cIzJLv07A6Fpt
+    43C/dxC//AH2hdmoRBBYMql1GNXRor5H4idq9Joz+EkIYIvUX7Q6hL+hqkpMfT7P
+    T19sdl6gSzeRntwi5m3OFBqOasv+zbMUZBfHWymeMr/y7vrTC0LUq7dBMtoM1O/4
+    gdW7jVg/tRvoSSiicNoxBN33shbyTApOB6jtSj1etX+jkMOvJwIDAQABo2MwYTAO
+    BgNVHQ8BAf8EBAMCAYYwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUA95QNVbR
+    TLtm8KPiGxvDl7I90VUwHwYDVR0jBBgwFoAUA95QNVbRTLtm8KPiGxvDl7I90VUw
+    DQYJKoZIhvcNAQEFBQADggEBAMucN6pIExIK+t1EnE9SsPTfrgT1eXkIoyQY/Esr
+    hMAtudXH/vTBH1jLuG2cenTnmCmrEbXjcKChzUyImZOMkXDiqw8cvpOp/2PV5Adg
+    06O/nVsJ8dWO41P0jmP6P6fbtGbfYmbW0W5BjfIttep3Sp+dWOIrWcBAI+0tKIJF
+    PnlUkiaY4IBIqDfv8NZ5YBberOgOzW6sRBc4L0na4UU+Krk2U886UAb3LujEV0ls
+    YSEY1QSteDwsOoBrp+uvFRTp2InBuThs4pFsiv9kuXclVzDAGySj4dzp30d8tbQk
+    CAUw7C29C79Fv1C5qfPrmAESrciIxpg0X40KPMbp1ZWVbd4=
+    -----END CERTIFICATE-----
+    )EOF"</span>;<br><br><span class="hljs-comment">// Function Declarations</span>
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">connectToWiFi</span><span class="hljs-params">()</span></span>;<br><br><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">connectToMQTT</span><span class="hljs-params">()</span></span>;<br><br><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">mqttCallback</span><span class="hljs-params">(<span class="hljs-type">char</span> *topic, byte *payload, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> length)</span></span>;<br><br><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">setup</span><span class="hljs-params">()</span> </span>{
+      Serial.<span class="hljs-built_in">begin</span>(<span class="hljs-number">115200</span>);  <span class="hljs-comment">// 初始化串口</span>
+      <span class="hljs-built_in">connectToWiFi</span>();<br><br>  <span class="hljs-comment">// 初始化蓝牙</span>
+      <span class="hljs-keyword">if</span> (!BLE.<span class="hljs-built_in">begin</span>()) {
+        Serial.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Starting BLE failed!"</span>);
+        <span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>)
+          ;
+      }<br><br>  <span class="hljs-comment">// 设置根证书</span>
+      <span class="hljs-comment">// esp_client.setCACert(ca_cert); // 如果使用自己的服务器需要设置根证书</span><br><br>  mqtt_client.<span class="hljs-built_in">setServer</span>(mqtt_broker, mqtt_port);  <span class="hljs-comment">// 设置mqtt服务</span>
+      mqtt_client.<span class="hljs-built_in">setKeepAlive</span>(<span class="hljs-number">60</span>);
+      mqtt_client.<span class="hljs-built_in">setCallback</span>(mqttCallback);  <span class="hljs-comment">// 设置回调函数</span>
+      <span class="hljs-built_in">connectToMQTT</span>();
+    }<br><br><span class="hljs-comment">// 用于连接WiFi的函数</span>
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">connectToWiFi</span><span class="hljs-params">()</span> </span>{
+      WiFi.<span class="hljs-built_in">begin</span>(ssid, password);
+      Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Connecting to WiFi"</span>);
+      <span class="hljs-keyword">while</span> (WiFi.<span class="hljs-built_in">status</span>() != WL_CONNECTED) {
+        <span class="hljs-built_in">delay</span>(<span class="hljs-number">500</span>);
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"."</span>);
+      }
+      Serial.<span class="hljs-built_in">println</span>(<span class="hljs-string">"\nConnected to WiFi"</span>);
+    }<br><br><span class="hljs-comment">// 用于连接MQTT服务的函数</span>
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">connectToMQTT</span><span class="hljs-params">()</span> </span>{
+      <span class="hljs-keyword">while</span> (!mqtt_client.<span class="hljs-built_in">connected</span>()) {
+        String client_id = <span class="hljs-string">"esp32-client-"</span> + <span class="hljs-built_in">String</span>(WiFi.<span class="hljs-built_in">macAddress</span>());
+        Serial.<span class="hljs-built_in">printf</span>(<span class="hljs-string">"Connecting to MQTT Broker as %s...\n"</span>, client_id.<span class="hljs-built_in">c_str</span>());
+        <span class="hljs-keyword">if</span> (mqtt_client.<span class="hljs-built_in">connect</span>(client_id.<span class="hljs-built_in">c_str</span>())) {
+    <span class="hljs-comment">//  if (mqtt_client.connect(client_id.c_str(), mqtt_username, mqtt_password)) // 使用自己的服务器需要传入账户密码参数</span>
+          Serial.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Connected to MQTT broker"</span>);
+          mqtt_client.<span class="hljs-built_in">subscribe</span>(topic_commands.<span class="hljs-built_in">c_str</span>());
+          mqtt_client.<span class="hljs-built_in">publish</span>(topic_status.<span class="hljs-built_in">c_str</span>(), <span class="hljs-string">"Hi EMQX I'm ESP32 ^^"</span>);  <span class="hljs-comment">// Publish message upon connection</span>
+        } <span class="hljs-keyword">else</span> {
+          Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Failed to connect to MQTT broker, rc="</span>);
+          Serial.<span class="hljs-built_in">print</span>(mqtt_client.<span class="hljs-built_in">state</span>());
+          Serial.<span class="hljs-built_in">println</span>(<span class="hljs-string">" Retrying in 5 seconds."</span>);
+          <span class="hljs-built_in">delay</span>(<span class="hljs-number">5000</span>);
+        }
+      }
+    }<br><br><span class="hljs-comment">// 该函数指示了如果收到来自mqtt服务器的消息该如何操作</span>
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">mqttCallback</span><span class="hljs-params">(<span class="hljs-type">char</span> *topic, byte *payload, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> length)</span> </span>{
+      Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Message received on topic: "</span>);
+      Serial.<span class="hljs-built_in">println</span>(topic);
+      Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Message: "</span>);
+      <span class="hljs-keyword">for</span> (<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; length; i++) {
+        Serial.<span class="hljs-built_in">print</span>((<span class="hljs-type">char</span>)payload[i]);
+      }
+      Serial.<span class="hljs-built_in">println</span>(<span class="hljs-string">"\n-----------------------"</span>);
+      mqtt_client.<span class="hljs-built_in">publish</span>(topic_connect.<span class="hljs-built_in">c_str</span>(), <span class="hljs-string">"Hi EMQX I'm ESP32 ^^"</span>);
+    }<br><br><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">loop</span><span class="hljs-params">()</span> </span>{
+      <span class="hljs-comment">// 如果断开与服务器的连接则尝试重连</span>
+      <span class="hljs-keyword">if</span> (!mqtt_client.<span class="hljs-built_in">connected</span>()) {
+        <span class="hljs-built_in">connectToMQTT</span>();
+      }
+      mqtt_client.<span class="hljs-built_in">loop</span>();  <span class="hljs-comment">// 类似app.run()</span><br><br>  <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> lastMsg = <span class="hljs-built_in">millis</span>(); <span class="hljs-comment">// 当前时间</span><br><br>  BLE.<span class="hljs-built_in">scan</span>();  <span class="hljs-comment">// 开启蓝牙扫描</span>
+      Serial.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Scanning for BLE devices..."</span>);<br><br>  <span class="hljs-comment">// 持续扫描20秒，试图找到对应mac地址的广播数据</span>
+      <span class="hljs-keyword">while</span> (<span class="hljs-built_in">millis</span>() - lastMsg &lt; <span class="hljs-number">20</span> * <span class="hljs-number">1000</span>) {
+        <span class="hljs-comment">// delay(1000); // 每次得出结果后等待1秒</span>
+        String s = <span class="hljs-built_in">getAdvertisementData</span>(targetMACAddress);
+        <span class="hljs-keyword">if</span> (s.<span class="hljs-built_in">length</span>()) {
+          Serial.<span class="hljs-built_in">println</span>(<span class="hljs-string">"hello"</span>);
+          mqtt_client.<span class="hljs-built_in">publish</span>(topic_advertisementData.<span class="hljs-built_in">c_str</span>(), s.<span class="hljs-built_in">c_str</span>());
+        }
+      }<br><br>  BLE.<span class="hljs-built_in">stopScan</span>(); <span class="hljs-comment">// 结束蓝牙扫描</span><br><br>  <span class="hljs-comment">// 扫描结束后更新消息，用于判断是否有连接</span>
+      String msg = <span class="hljs-string">"Hello from ESP32"</span> + <span class="hljs-built_in">String</span>(lastMsg);
+      Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Publish message: "</span>);
+      Serial.<span class="hljs-built_in">println</span>(msg);
+      mqtt_client.<span class="hljs-built_in">publish</span>(topic_status.<span class="hljs-built_in">c_str</span>(), msg.<span class="hljs-built_in">c_str</span>());<br><br>  <span class="hljs-built_in">delay</span>(<span class="hljs-number">10</span> * <span class="hljs-number">1000</span>); <span class="hljs-comment">// 每次扫描结束后等待10秒再进行扫描</span>
+    }<br><br><span class="hljs-comment">// 获取蓝牙设备并判断是否是指定设备，如果是则返回其广播数据，未扫描到设备则返回空字符串</span>
+    <span class="hljs-function">String <span class="hljs-title">getAdvertisementData</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">char</span> *targetMACAddress)</span> </span>{
+      <span class="hljs-comment">// 获取扫描结果</span>
+      BLEDevice peripheral = BLE.<span class="hljs-built_in">available</span>();
+      <span class="hljs-keyword">if</span> (peripheral) {
+        <span class="hljs-comment">// 打印设备地址</span>
+        Serial.<span class="hljs-built_in">print</span>(<span class="hljs-string">"Found device: "</span>);
+        Serial.<span class="hljs-built_in">println</span>(peripheral.<span class="hljs-built_in">address</span>());<br><br>    <span class="hljs-comment">// 检查是否是指定的MAC地址</span>
+        <span class="hljs-keyword">if</span> (peripheral.<span class="hljs-built_in">address</span>() == targetMACAddress) {
+          Serial.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Target device found!"</span>);<br><br>      <span class="hljs-comment">// 获取广播数据</span>
+          <span class="hljs-type">int</span> len = peripheral.<span class="hljs-built_in">advertisementDataLength</span>();
+          <span class="hljs-keyword">if</span> (len &gt; <span class="hljs-number">0</span>) {
+            byte advData[len];
+            peripheral.<span class="hljs-built_in">advertisementData</span>(advData, len);<br><br>        <span class="hljs-comment">// 创建 String 用于记录广播数据</span>
+            String advDataStr = <span class="hljs-string">""</span>;<br><br>        <span class="hljs-comment">// 将 byte 数组数据复制到String</span>
+            <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; len; i++) {
+              <span class="hljs-type">char</span> hex[<span class="hljs-number">3</span>];  <span class="hljs-comment">// 两位十六进制数加上终止符</span>
+              <span class="hljs-built_in">sprintf</span>(hex, <span class="hljs-string">"%02X"</span>, advData[i]);
+              advDataStr += hex;
+            }<br><br>        <span class="hljs-keyword">return</span> advDataStr;
+          }
+        }
+        <span class="hljs-keyword">return</span> <span class="hljs-string">""</span>;
+      }
+      <span class="hljs-keyword">return</span> <span class="hljs-string">""</span>;
+    }
+    </code></pre>
+          </div>
+        </li>
+      </ul>
+
+
+    </div>
+  </div>
+</body>
+
+<style>
+  :root {
+    font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+    font-weight: 400;
+
+    color-scheme: light dark;
+    color: rgba(255, 255, 255, 0.87);
+    background-color: #242424;
+
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  a {
+    font-weight: 500;
+    color: #646cff;
+    text-decoration: inherit;
+  }
+
+  a:hover {
+    color: #535bf2;
+  }
+
+  body {
+    margin: 0;
+    display: flex;
+    place-items: center;
+    min-width: 320px;
+    min-height: 100vh;
+  }
+
+  h1 {
+    font-size: 3.2em;
+    line-height: 1.1;
+  }
+
+  button {
+    border-radius: 8px;
+    border: 1px solid transparent;
+    padding: 0.6em 1.2em;
+    font-size: 1em;
+    font-weight: 500;
+    font-family: inherit;
+    background-color: #1a1a1a;
+    cursor: pointer;
+    transition: border-color 0.25s;
+  }
+
+  button:hover {
+    border-color: #646cff;
+  }
+
+  button:focus,
+  button:focus-visible {
+    outline: 4px auto -webkit-focus-ring-color;
+  }
+
+  .card {
+    padding: 2em;
+  }
+
+  #app {
+    max-width: 80%;
+    margin: 0 auto;
+    padding: 2rem;
+    text-align: center;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root {
+      color: #213547;
+      background-color: #f7f7f7;
+    }
+
+    a:hover {
+      color: #747bff;
+    }
+
+    button {
+      background-color: #f7f7f7;
+    }
+  }
+
+  @media screen and (max-width: 768px) {
+    button {
+      font-size: small;
+    }
+
+    #app {
+      max-width: none;
+    }
+  }
+
+  /* 复合代码块增强样式 */
+  .mix-code-container {
+    height: max-content;
+    border: 1px solid #ccc;
+    display: flex;
+    position: relative;
+    overflow: hidden;
+    padding-left: 5px;
+  }
+
+  /* 隐藏所有的 radio inputs */
+  .mix-code-container .mix-tab {
+    display: none;
+  }
+
+  .mix-code-container .mix-tab-item {
+    list-style-type: none;
+    height: auto;
+    width: auto;
+    overflow-x: hidden;
+    margin: 10px;
+  }
+
+  .mix-code-container .mix-tab-item>label {
+    width: min(120px, max-content);
+  }
+
+  /* 悬浮标签上的样式 */
+  .mix-code-container .mix-tab:hover+label {
+    cursor: pointer;
+    background-color: #ddd;
+    font-weight: bold;
+  }
+
+  /* 当选中标签时的样式 */
+  .mix-code-container .mix-tab:checked+label {
+    background-color: #ddd;
+    line-height: 20px;
+    font-weight: bold;
+  }
+
+  /* 隐藏所有的 tab-content */
+  .mix-code-container .mix-code-content-virtual {
+    color: white;
+    display: none;
+    position: relative;
+    left: 5px;
+    margin-top: 10px;
+    width: 1px;
+    z-index: -999;
+  }
+
+  .mix-code-container .mix-code-content {
+    color: black;
+    display: none;
+    position: absolute;
+    left: 5px;
+    margin-top: 10px;
+    width: calc(100% - 10px);
+  }
+
+  /* 显示选中的 tab-content */
+  .mix-code-container .mix-tab:checked+label~.mix-code-content-virtual {
+    display: flex;
+    padding-top: 0px;
+  }
+
+  /* 显示选中的 tab-content */
+  .mix-code-container .mix-tab:checked+label+.mix-code-content {
+    display: block;
+    padding-top: 0px;
+  }
+
+  /* 轮播图语法支持样式 */
+  .Carousel-container {
+    width: 100%;
+    height: 520px;
+    display: flex;
+    position: relative;
+    justify-content: center;
+  }
+
+  .Carousel-container .Carousel-item {
+    display: flex;
+    width: auto;
+    flex-direction: column-reverse;
+    justify-content: flex-end;
+  }
+
+  .Carousel-container .img {
+    display: none;
+  }
+
+  .Carousel-container img {
+    height: 520px;
+  }
+
+  .Carousel-container .img-virtual {
+    width: 1px;
+    visibility: hidden;
+    overflow-x: hidden;
+  }
+
+  .Carousel-container .carousel-tab:checked+.img {
+    display: block;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border: #1a1a1a solid 1px;
+    z-index: -999;
+  }
+
+  .Carousel-container .carousel-tab:checked+.img-virtual {
+    display: block;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    text-align: center;
+    color: #5f94cd;
+  }
+
+  table {
+    padding: 0;
+    border-collapse: collapse;
+    border-spacing: 0;
+    font-size: 1em;
+    font: inherit;
+    border: 0;
+    margin: 0 auto;
+  }
+
+  tbody {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  table tr {
+    border: 0;
+    border-top: 1px solid #CCC;
+    background-color: white;
+    margin: 0;
+    padding: 0;
+  }
+
+  table tr:nth-child(2n) {
+    background-color: #F8F8F8;
+  }
+
+  table tr th,
+  table tr td {
+    font-size: 16px;
+    border: 1px solid #CCC;
+    margin: 0;
+    padding: 5px 10px;
+  }
+
+  table tr th {
+    font-weight: bold;
+    color: #eee;
+    border: 1px solid #2e59a7;
+    background-color: #5976ba;
+  }
+
+  em {
+    font-family: Arial, sans-serif;
+    color: #5976ba;
+  }
+
+  a {
+    font-family: Arial, Helvetica, sans-serif;
+    font-style: italic;
+    text-decoration: underline;
+  }
+
+  a:hover {
+    color: #5976ba;
+  }
+
+  body {
+    display: flex;
+    justify-content: center;
+  }
+
+  @media screen and (min-width: 768px) {
+    .container {
+      width: 65%;
+    }
+  }
+
+  @media screen and (max-width: 768px) {
+    .Carousel-container {
+      transform: scale(0.45);
+    }
+  }
+</style>
+
+</html>
