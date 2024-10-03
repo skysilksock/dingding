@@ -50,9 +50,9 @@
 - **特别的**，观察蓝牙所广播的数据，如果以*000D*、*000F*、*000B*和*0x20*结尾则说明广播是动态的（x为表示任意数字），如下图中蓝牙数据以*5331*结尾；如果不以上述数据结尾也有可能为动态蓝牙，请通过实践具体判断。
 
 @carousel
-![](http://112.74.72.34:5003/static/markdown/dingding/nRF%20connect/f1)
-![](http://112.74.72.34:5003/static/markdown/dingding/nRF%20connect/f2)
-![](http://112.74.72.34:5003/static/markdown/dingding/nRF%20connect/f3)
+![](static/dingding/nRF%20connect/f1)
+![](static/dingding/nRF%20connect/f2)
+![](static/dingding/nRF%20connect/f3)
 @endcarousel
 
 ### Arduino
@@ -65,12 +65,12 @@
 4. 下载如图6所展示的所有依赖
 
 @carousel
-![](http://112.74.72.34:5003/static/markdown/dingding/Arduino/f1)
-![](http://112.74.72.34:5003/static/markdown/dingding/Arduino/f2)
-![](http://112.74.72.34:5003/static/markdown/dingding/Arduino/f3)
-![](http://112.74.72.34:5003/static/markdown/dingding/Arduino/f4)
-![](http://112.74.72.34:5003/static/markdown/dingding/Arduino/f5)
-![](http://112.74.72.34:5003/static/markdown/dingding/Arduino/f6)
+![](static/dingding/Arduino/f1)
+![](static/dingding/Arduino/f2)
+![](static/dingding/Arduino/f3)
+![](static/dingding/Arduino/f4)
+![](static/dingding/Arduino/f5)
+![](static/dingding/Arduino/f6)
 @endcarousel
 
 ### 粗糙编程
@@ -86,8 +86,8 @@
 3. 在输入界面中输入程序后点击编译再上传或直接上传，esp32C3就会运行这段程序了，这时打开串口监视器就可以看到打印的信息了，如果没有信息的话请检查波特率是否为115200，工具中的配置是否正确。建议使用电脑usb电源口运行开发板，如果需要其它电源建议电流小于1000mA
 
 @carousel
-![](http://112.74.72.34:5003/static/markdown/dingding/Arduino/f7)
-![](http://112.74.72.34:5003/static/markdown/dingding/Arduino/f8)
+![](static/dingding/Arduino/f7)
+![](static/dingding/Arduino/f8)
 @endcarousel
 
 ~~~cpp [] 蓝牙广播
@@ -230,9 +230,9 @@ void loop() {
 3. 添加用户，如图3所示
 
 @carousel
-![](http://112.74.72.34:5003/static/markdown/dingding/EMQX/f1)
-![](http://112.74.72.34:5003/static/markdown/dingding/EMQX/f2)
-![](http://112.74.72.34:5003/static/markdown/dingding/EMQX/f3)
+![](static/dingding/EMQX/f1)
+![](static/dingding/EMQX/f2)
+![](static/dingding/EMQX/f3)
 @endcarousel
 
 
@@ -249,9 +249,9 @@ void loop() {
 5. 点击*CONNECT*按钮进行连接，进入后的界面介绍可以参考第一点的链接
 
 @carousel
-![](http://112.74.72.34:5003/static/markdown/dingding/mqtt%20explorer/f1)
-![](http://112.74.72.34:5003/static/markdown/dingding/mqtt%20explorer/f2)
-![](http://112.74.72.34:5003/static/markdown/dingding/mqtt%20explorer/f3)
+![](static/dingding/mqtt%20explorer/f1)
+![](static/dingding/mqtt%20explorer/f2)
+![](static/dingding/mqtt%20explorer/f3)
 @endcarousel
 
 ### 粗糙编程
@@ -265,7 +265,7 @@ void loop() {
 5. 运行时的工作电流大于1000mA时可能无法正常工作
 
 @carousel
-![](http://112.74.72.34:5003/static/markdown/dingding/Arduino/f9)
+![](static/dingding/Arduino/f9)
 @endcarousel
 
 #### 说明
